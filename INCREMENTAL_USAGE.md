@@ -28,14 +28,20 @@ python gmail_automation_extended.py --scan-unlabeled
 # Scan unlabeled emails from last 7 days
 python gmail_automation_extended.py --scan-unlabeled --days-back 7
 
-# Scan ALL unlabeled emails (no date limit)
+# Scan ALL unlabeled emails (no date or count limits)
 python gmail_automation_extended.py --scan-all-unlabeled
+
+# Exhaustive scan of entire inbox (use with caution)
+python gmail_automation_extended.py --exhaustive-scan
 ```
 
 ### **Advanced Options**
 ```bash
 # Limit processing to specific number of emails
 python gmail_automation_extended.py --scan-unlabeled --max-emails 500
+
+# Unlimited processing (scan all matching emails)
+python gmail_automation_extended.py --scan-unlabeled --max-emails 0
 
 # Resume from specific email ID (if interrupted)
 python gmail_automation_extended.py --scan-unlabeled --resume-from "email_id_here"
@@ -78,8 +84,11 @@ python gmail_automation_extended.py --scan-unlabeled --days-back 30 --max-emails
 
 ### **Complete Inbox Audit**
 ```bash
-# Scan ALL unlabeled emails in entire inbox
-python gmail_automation_extended.py --scan-all-unlabeled --max-emails 10000
+# Scan ALL unlabeled emails in entire inbox (truly unlimited)
+python gmail_automation_extended.py --scan-all-unlabeled
+
+# Exhaustive scan of entire inbox (even labeled emails)
+python gmail_automation_extended.py --exhaustive-scan
 ```
 
 ## 📊 **Performance Comparison**

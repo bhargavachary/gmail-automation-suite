@@ -86,8 +86,10 @@ python gmail_automation.py --scan-emails --debug-categorization  # Show AI decis
 
 # ⚡ NEW: Incremental Labeling (Extended Version)
 python gmail_automation_extended.py --scan-unlabeled        # Only label unlabeled emails (10x faster!)
-python gmail_automation_extended.py --scan-all-unlabeled    # Scan ALL unlabeled emails
+python gmail_automation_extended.py --scan-all-unlabeled    # Scan ALL unlabeled emails (unlimited)
+python gmail_automation_extended.py --exhaustive-scan       # Complete inbox scan (use with caution)
 python gmail_automation_extended.py --scan-unlabeled --days-back 1  # Daily maintenance mode
+python gmail_automation_extended.py --scan-unlabeled --max-emails 0  # Unlimited processing
 ```
 
 ## Labels Created

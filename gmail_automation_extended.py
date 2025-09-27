@@ -224,12 +224,15 @@ class GmailAutomationExtended:
 
         Args:
             config: Incremental scan configuration
-            max_emails: Maximum number of emails to return
+            max_emails: Maximum number of emails to return (0 = unlimited)
 
         Returns:
             List of email message objects
         """
-        print(f"🔍 Scanning for unlabeled emails...")
+        if max_emails == 0:
+            print(f"🔍 Scanning for ALL unlabeled emails (unlimited)...")
+        else:
+            print(f"🔍 Scanning for unlabeled emails (max: {max_emails})...")
 
         # Build Gmail search query
         query_parts = []
@@ -258,10 +261,16 @@ class GmailAutomationExtended:
             next_page_token = None
             processed_count = 0
 
-            while len(unlabeled_emails) < max_emails:
+            # Continue while we haven't reached max_emails (if limited) or while there are more emails
+            while max_emails == 0 or len(unlabeled_emails) < max_emails:
                 # Calculate how many to fetch in this batch
-                remaining = max_emails - len(unlabeled_emails)
-                batch_size = min(config.batch_size, remaining, 500)  # Gmail API limit is 500
+                if max_emails == 0:
+                    # Unlimited mode - use maximum API batch size
+                    batch_size = min(config.batch_size, 500)  # Gmail API limit is 500
+                else:
+                    # Limited mode - respect remaining count
+                    remaining = max_emails - len(unlabeled_emails)
+                    batch_size = min(config.batch_size, remaining, 500)
 
                 # Fetch batch of emails
                 request_params = {
@@ -303,19 +312,37 @@ class GmailAutomationExtended:
                         print(f"   📍 Resuming from email ID: {config.resume_from_id}")
                         batch_unlabeled = []  # Clear batch, start fresh from here
 
-                    # Progress update
-                    if processed_count % 100 == 0:
-                        print(f"   📊 Processed {processed_count} emails, found {len(unlabeled_emails)} unlabeled so far...")
+                    # Progress update - more frequent for unlimited scans
+                    progress_interval = 100 if max_emails == 0 else 500
+                    if processed_count % progress_interval == 0:
+                        if max_emails == 0:
+                            print(f"   📊 Unlimited scan: Processed {processed_count} emails, found {len(unlabeled_emails)} unlabeled so far...")
+                        else:
+                            print(f"   📊 Processed {processed_count} emails, found {len(unlabeled_emails)} unlabeled so far...")
 
                 unlabeled_emails.extend(batch_unlabeled)
 
                 # Get next page token
                 next_page_token = result.get('nextPageToken')
                 if not next_page_token:
+                    if max_emails == 0:
+                        print("   📍 Reached end of inbox (no more emails)")
                     break
 
                 # Show progress
-                print(f"   📦 Batch complete: +{len(batch_unlabeled)} unlabeled emails (total: {len(unlabeled_emails)})")
+                if max_emails == 0:
+                    print(f"   📦 Batch complete: +{len(batch_unlabeled)} unlabeled emails (total: {len(unlabeled_emails)}, scanned: {processed_count})")
+                else:
+                    print(f"   📦 Batch complete: +{len(batch_unlabeled)} unlabeled emails (total: {len(unlabeled_emails)})")
+
+                # Add safety check for unlimited scans to prevent runaway processes
+                if max_emails == 0 and processed_count > 50000:
+                    print(f"   ⚠️ Large inbox detected ({processed_count} emails scanned). Consider using --max-emails to limit scope.")
+                    if processed_count % 10000 == 0:
+                        response = input(f"   Continue scanning? (y/N): ").strip().lower()
+                        if response != 'y':
+                            print("   🛑 Scan stopped by user")
+                            break
 
         except Exception as e:
             print(f"❌ Error fetching unlabeled emails: {e}")
@@ -702,9 +729,11 @@ def main():
     parser.add_argument('--scan-unlabeled', action='store_true',
                        help='Scan and label only emails without automation labels')
     parser.add_argument('--scan-all-unlabeled', action='store_true',
-                       help='Scan ALL unlabeled emails (no date limit)')
+                       help='Scan ALL unlabeled emails (no date or count limit)')
+    parser.add_argument('--exhaustive-scan', action='store_true',
+                       help='Exhaustive scan of entire inbox (use with caution)')
     parser.add_argument('--max-emails', type=int, default=1000,
-                       help='Maximum emails to process (default: 1000)')
+                       help='Maximum emails to process (default: 1000, 0 = unlimited)')
     parser.add_argument('--days-back', type=int, default=30,
                        help='Days back to scan (default: 30, 0 = all)')
     parser.add_argument('--resume-from', type=str,
@@ -765,10 +794,26 @@ def main():
         return 0
 
     # Handle incremental labeling
-    if args.scan_unlabeled or args.scan_all_unlabeled:
-        days_back = 0 if args.scan_all_unlabeled else args.days_back
+    if args.scan_unlabeled or args.scan_all_unlabeled or args.exhaustive_scan:
+        # Set unlimited parameters for exhaustive scans
+        if args.scan_all_unlabeled or args.exhaustive_scan:
+            days_back = 0
+            max_emails = 0 if args.max_emails == 1000 else args.max_emails  # 0 = unlimited if default
+
+            if args.scan_all_unlabeled:
+                print("🔄 Scanning ALL unlabeled emails (no limits) - this may take a while...")
+            elif args.exhaustive_scan:
+                print("🔄 Exhaustive scan of entire inbox (use with caution) - this may take a very long time...")
+        else:
+            days_back = args.days_back
+            max_emails = args.max_emails
+
+        # Override max_emails if explicitly set to 0
+        if args.max_emails == 0:
+            max_emails = 0
+
         stats = automation.scan_and_label_unlabeled_emails(
-            max_emails=args.max_emails,
+            max_emails=max_emails,
             days_back=days_back,
             debug=args.debug_categorization,
             only_unlabeled=True,
@@ -779,7 +824,9 @@ def main():
     # Default behavior
     print("🎯 Extended Gmail Automation Suite v4.1")
     print("💡 Use --scan-unlabeled for incremental labeling of new emails")
-    print("💡 Use --scan-all-unlabeled for complete unlabeled email scan")
+    print("💡 Use --scan-all-unlabeled for complete unlimited scan of all unlabeled emails")
+    print("💡 Use --exhaustive-scan for complete inbox scan (use with caution)")
+    print("💡 Use --max-emails 0 for unlimited email processing")
     print("💡 Use --help for all available options")
 
     return 0

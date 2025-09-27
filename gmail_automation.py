@@ -59,18 +59,18 @@ class GmailAutomation:
         self.service = None
         self.labels_cache = {}
 
-        # Predefined labels with colors
+        # Predefined labels with Gmail-approved colors
         self.labels = [
-            Label('🏦 Banking & Finance', '#4285f4'),
-            Label('📈 Investments & Trading', '#0b8043'),
-            Label('🔔 Alerts & Security', '#d93025'),
-            Label('🛒 Shopping & Orders', '#ff6d01'),
-            Label('👤 Personal & Work', '#9c27b0'),
-            Label('📰 Marketing & News', '#5f6368'),
-            Label('🎯 Action Required', '#ea4335'),
-            Label('📦 Receipts & Archive', '#9aa0a6'),
-            Label('🏥 Insurance & Services', '#34a853'),
-            Label('✈️ Travel & Transport', '#ff9800')
+            Label('🏦 Banking & Finance', '#4a86e8'),      # Blue
+            Label('📈 Investments & Trading', '#16a766'),   # Green
+            Label('🔔 Alerts & Security', '#cc3a21'),       # Red
+            Label('🛒 Shopping & Orders', '#ffad47'),       # Orange
+            Label('👤 Personal & Work', '#8e63ce'),         # Purple
+            Label('📰 Marketing & News', '#666666'),        # Gray
+            Label('🎯 Action Required', '#fb4c2f'),         # Bright Red
+            Label('📦 Receipts & Archive', '#cccccc'),      # Light Gray
+            Label('🏥 Insurance & Services', '#43d692'),    # Light Green
+            Label('✈️ Travel & Transport', '#fad165')       # Yellow
         ]
 
         # Enhanced predefined filters with importance marking
@@ -259,6 +259,22 @@ class GmailAutomation:
                 if error.resp.status == 409:
                     print(f"  ✓ Already exists (API conflict)")
                     exists_count += 1
+                elif error.resp.status == 400 and "color" in str(error):
+                    # Try creating label without color if color is invalid
+                    print(f"  ⚠️  Invalid color, creating without color...")
+                    try:
+                        label_body_no_color = {
+                            'name': label.name,
+                            'labelListVisibility': 'labelShow',
+                            'messageListVisibility': 'show'
+                        }
+                        result = self.service.users().labels().create(userId='me', body=label_body_no_color).execute()
+                        print(f"  ✅ Created successfully without color (ID: {result.get('id')})")
+                        self.labels_cache[label.name] = result.get('id')
+                        created_count += 1
+                    except Exception as fallback_error:
+                        print(f"  ❌ Fallback failed: {fallback_error}")
+                        failed_count += 1
                 else:
                     print(f"  ❌ HTTP Error: {error}")
                     failed_count += 1

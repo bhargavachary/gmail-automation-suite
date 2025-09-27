@@ -53,16 +53,18 @@ python gmail_automation.py --clear-filters                           # Clear all
 
 ## Labels Created
 
-- 🏦 Banking & Finance (Blue)
-- 📈 Investments & Trading (Green)
-- 🔔 Alerts & Security (Red)
-- 🛒 Shopping & Orders (Orange)
-- 👤 Personal & Work (Purple)
-- 📰 Marketing & News (Gray)
-- 🎯 Action Required (Bright Red)
-- 📦 Receipts & Archive (Light Gray)
-- 🏥 Insurance & Services (Green)
-- ✈️ Travel & Transport (Orange)
+- 🏦 Banking & Finance (Blue - #4a86e8)
+- 📈 Investments & Trading (Green - #16a766)
+- 🔔 Alerts & Security (Red - #cc3a21)
+- 🛒 Shopping & Orders (Orange - #ffad47)
+- 👤 Personal & Work (Purple - #8e63ce)
+- 📰 Marketing & News (Gray - #666666)
+- 🎯 Action Required (Bright Red - #fb4c2f)
+- 📦 Receipts & Archive (Light Gray - #cccccc)
+- 🏥 Insurance & Services (Light Green - #43d692)
+- ✈️ Travel & Transport (Yellow - #fad165)
+
+*Note: Colors use Gmail's official API palette for guaranteed compatibility*
 
 ## 🔥 Enhanced Smart Filters
 

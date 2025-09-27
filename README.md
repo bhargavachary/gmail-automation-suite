@@ -6,12 +6,14 @@
 
 - 🏷️ **Smart Label Creation**: Creates organized labels with custom colors
 - 🔍 **Advanced Filters**: Auto-categorizes emails with importance marking and archiving
+- 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails using AI-powered categorization
 - 📧 **Email Migration**: Batch migrate emails between labels with rate limiting
 - 🗑️ **Label Management**: Delete old labels and consolidate email organization
 - 🧹 **Filter Cleanup**: Clear existing filters for fresh setup
 - 📊 **Promotional Email Scanning**: Identifies and manages promotional emails
 - ✅ **Comprehensive Validation**: Environment validation and robust error handling
 - 🚀 **Modular Operations**: Run individual operations or complete automation
+- ⚡ **Batch Processing**: Efficient handling of large email volumes with progress tracking
 
 ## Quick Start
 
@@ -41,8 +43,11 @@ python gmail_automation.py --labels-only
 # Filters only (with importance marking and auto-archive)
 python gmail_automation.py --filters-only
 
-# Clear existing filters and create new ones
-python gmail_automation.py --filters-only --clear-filters
+# 🔥 NEW: Scan and auto-label existing emails
+python gmail_automation.py --scan-emails                    # Scan last 30 days, max 1000 emails
+python gmail_automation.py --scan-emails --max-emails 500   # Limit to 500 emails
+python gmail_automation.py --scan-emails --days-back 7      # Only last 7 days
+python gmail_automation.py --scan-emails --days-back 0      # Scan ALL emails (use with caution)
 
 # Advanced operations
 python gmail_automation.py --scan-promos                    # Scan promotional emails
@@ -112,6 +117,11 @@ Basic Options:
   --filters-only       Only create filters, skip labels
   --scan-promos        Scan for promotional emails
 
+🔥 Email Scanning Options:
+  --scan-emails        Scan and auto-label existing emails
+  --max-emails N       Maximum emails to process (default: 1000)
+  --days-back N        Days back to scan (0 = all emails, default: 30)
+
 Advanced Operations:
   --clear-filters              Clear all existing filters
   --migrate-labels FROM TO     Migrate emails from one label to another
@@ -119,6 +129,11 @@ Advanced Operations:
   -h, --help                   Show help message
 
 Examples:
+  # 🤖 Intelligent email scanning
+  python gmail_automation.py --scan-emails                    # Scan last 30 days
+  python gmail_automation.py --scan-emails --max-emails 2000  # Process more emails
+  python gmail_automation.py --scan-emails --days-back 90     # Scan last 3 months
+
   # Full setup with filter cleanup
   python gmail_automation.py --clear-filters
 
@@ -128,8 +143,9 @@ Examples:
   # Clean up unused labels
   python gmail_automation.py --delete-labels "Label_19" "Label_20" "Old Label"
 
-  # Fresh filter setup
-  python gmail_automation.py --filters-only --clear-filters
+  # Complete workflow: Create labels, filters, then scan emails
+  python gmail_automation.py                    # Setup labels & filters
+  python gmail_automation.py --scan-emails      # Auto-label existing emails
 ```
 
 ## Security & Privacy

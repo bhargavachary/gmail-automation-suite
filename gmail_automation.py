@@ -487,6 +487,292 @@ class GmailAutomation:
             print(f"  ❌ Error clearing filters: {error}")
             return 0
 
+    def categorize_email(self, email_data: Dict) -> Optional[str]:
+        """
+        Categorize an email based on sender, subject, and content patterns.
+        Returns the appropriate label name or None if no category matches.
+        """
+        sender = email_data.get('sender', '').lower()
+        subject = email_data.get('subject', '').lower()
+        snippet = email_data.get('snippet', '').lower()
+
+        # Banking & Finance patterns
+        banking_domains = [
+            'hdfcbank.com', 'icicibank.com', 'axisbank.com', 'sbi.co.in', 'kotak.com',
+            'americanexpress.com', 'cred.club', 'paytm.com', 'phonepe.com', 'googlepay.com'
+        ]
+        banking_keywords = [
+            'statement', 'transaction', 'credit card', 'debit card', 'otp', 'payment',
+            'bank', 'account', 'balance', 'emi', 'loan', 'credit', 'debit'
+        ]
+
+        if (any(domain in sender for domain in banking_domains) or
+            any(keyword in subject + snippet for keyword in banking_keywords)):
+            return '🏦 Banking & Finance'
+
+        # Investments & Trading patterns
+        investment_domains = [
+            'zerodha.com', 'groww.in', 'upstox.com', 'angelone.in', 'kfintech.com',
+            'camsonline.com', 'indmoney.com', 'kuvera.in'
+        ]
+        investment_keywords = [
+            'contract note', 'mutual fund', 'demat', 'sip', 'portfolio', 'investment',
+            'trading', 'shares', 'stock', 'dividend', 'nfo', 'nav'
+        ]
+
+        if (any(domain in sender for domain in investment_domains) or
+            any(keyword in subject + snippet for keyword in investment_keywords)):
+            return '📈 Investments & Trading'
+
+        # Security & Alerts patterns
+        security_keywords = [
+            'security alert', 'suspicious activity', 'login attempt', 'password',
+            'verification', 'two-factor', '2fa', 'unauthorized', 'breach'
+        ]
+        security_senders = ['google', 'apple', 'microsoft', 'security', 'noreply']
+
+        if (any(keyword in subject + snippet for keyword in security_keywords) or
+            any(word in sender for word in security_senders) and 'security' in subject + snippet):
+            return '🔔 Alerts & Security'
+
+        # Shopping & Orders patterns
+        shopping_domains = [
+            'amazon.in', 'flipkart.com', 'myntra.com', 'ajio.com', 'nykaa.com',
+            'tatacliq.com', 'meesho.com', 'snapdeal.com'
+        ]
+        shopping_keywords = [
+            'order', 'delivery', 'shipped', 'tracking', 'invoice', 'receipt',
+            'purchase', 'cart', 'checkout', 'payment successful'
+        ]
+
+        if (any(domain in sender for domain in shopping_domains) or
+            any(keyword in subject + snippet for keyword in shopping_keywords)):
+            return '🛒 Shopping & Orders'
+
+        # Travel & Transport patterns
+        travel_domains = [
+            'makemytrip.com', 'goibibo.com', 'irctc.co.in', 'indigo.com', 'airindia.in',
+            'vistara.com', 'uber.com', 'ola.in', 'booking.com', 'agoda.com'
+        ]
+        travel_keywords = [
+            'ticket', 'booking', 'pnr', 'flight', 'train', 'hotel', 'travel',
+            'itinerary', 'boarding', 'reservation'
+        ]
+
+        if (any(domain in sender for domain in travel_domains) or
+            any(keyword in subject + snippet for keyword in travel_keywords)):
+            return '✈️ Travel & Transport'
+
+        # Insurance & Services patterns
+        insurance_domains = [
+            'policybazaar.com', 'acko.com', 'hdfcergo.com', 'digitinsurance.com',
+            'tata1mg.com', '1mg.com'
+        ]
+        insurance_keywords = [
+            'policy', 'premium', 'renewal', 'claim', 'insurance', 'health',
+            'medical', 'doctor', 'hospital', 'pharmacy'
+        ]
+
+        if (any(domain in sender for domain in insurance_domains) or
+            any(keyword in subject + snippet for keyword in insurance_keywords)):
+            return '🏥 Insurance & Services'
+
+        # Receipts & Archive patterns
+        receipt_domains = [
+            'netflix.com', 'primevideo.com', 'hotstar.com', 'spotify.com',
+            'swiggy.in', 'zomato.com', 'bookmyshow.com', 'dunzo.com'
+        ]
+        receipt_keywords = [
+            'receipt', 'invoice', 'bill', 'subscription', 'renewal', 'payment successful',
+            'order delivered', 'booking confirmation'
+        ]
+
+        if (any(domain in sender for domain in receipt_domains) or
+            any(keyword in subject + snippet for keyword in receipt_keywords)):
+            return '📦 Receipts & Archive'
+
+        # Marketing & News patterns
+        news_keywords = [
+            'newsletter', 'unsubscribe', 'news', 'update', 'briefing',
+            'marketing', 'promotional', 'offer', 'deal', 'sale'
+        ]
+
+        if any(keyword in subject + snippet for keyword in news_keywords):
+            return '📰 Marketing & News'
+
+        # Personal & Work patterns (catch-all for internal/personal emails)
+        work_keywords = [
+            'meeting', 'project', 'deadline', 'report', 'document',
+            'colleague', 'team', 'office', 'work'
+        ]
+
+        if any(keyword in subject + snippet for keyword in work_keywords):
+            return '👤 Personal & Work'
+
+        return None
+
+    def scan_and_label_emails(self, max_emails: int = 1000, days_back: int = 30) -> Dict[str, int]:
+        """
+        Scan existing emails and apply appropriate labels based on content analysis.
+
+        Args:
+            max_emails: Maximum number of emails to process
+            days_back: How many days back to scan (0 = all emails)
+
+        Returns:
+            Dictionary with labeling statistics
+        """
+        print(f"\n📧 Scanning and labeling emails...")
+        print(f"📊 Parameters: max_emails={max_emails}, days_back={days_back}")
+        print("-" * 60)
+
+        # Build query for recent emails
+        query_parts = ['in:inbox OR in:sent']
+        if days_back > 0:
+            query_parts.append(f'newer_than:{days_back}d')
+
+        query = ' '.join(query_parts)
+
+        try:
+            # Get existing labels for mapping
+            existing_labels = self.get_existing_labels()
+
+            # Get list of emails to process
+            print("🔍 Fetching email list...")
+            all_message_ids = []
+            request = self.service.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=min(500, max_emails)
+            )
+
+            while request is not None and len(all_message_ids) < max_emails:
+                response = request.execute()
+                messages = response.get('messages', [])
+                if messages:
+                    all_message_ids.extend([msg['id'] for msg in messages[:max_emails - len(all_message_ids)]])
+                    print(f"  📩 Found {len(all_message_ids)} emails so far...")
+                request = self.service.users().messages().list_next(request, response)
+
+                if len(all_message_ids) >= max_emails:
+                    break
+
+            if not all_message_ids:
+                print("📭 No emails found to process")
+                return {}
+
+            print(f"📬 Processing {len(all_message_ids)} emails...")
+
+            # Statistics tracking
+            stats = {
+                'processed': 0,
+                'labeled': 0,
+                'skipped': 0,
+                'errors': 0,
+                'categories': {}
+            }
+
+            # Process emails in batches
+            batch_size = 50
+            for i in range(0, len(all_message_ids), batch_size):
+                batch_ids = all_message_ids[i:i + batch_size]
+                batch_num = i // batch_size + 1
+                total_batches = (len(all_message_ids) + batch_size - 1) // batch_size
+
+                print(f"\n🔄 Processing batch {batch_num}/{total_batches} ({len(batch_ids)} emails)")
+
+                for msg_id in batch_ids:
+                    try:
+                        # Get email details
+                        email = self.service.users().messages().get(
+                            userId='me',
+                            id=msg_id,
+                            format='metadata',
+                            metadataHeaders=['From', 'To', 'Subject']
+                        ).execute()
+
+                        # Extract email data
+                        headers = {h['name'].lower(): h['value'] for h in email.get('payload', {}).get('headers', [])}
+                        email_data = {
+                            'sender': headers.get('from', ''),
+                            'subject': headers.get('subject', ''),
+                            'snippet': email.get('snippet', '')
+                        }
+
+                        # Categorize email
+                        suggested_label = self.categorize_email(email_data)
+                        stats['processed'] += 1
+
+                        if suggested_label and suggested_label in existing_labels:
+                            # Check if email already has this label
+                            current_labels = email.get('labelIds', [])
+                            target_label_id = existing_labels[suggested_label]
+
+                            if target_label_id not in current_labels:
+                                # Apply the label
+                                self.service.users().messages().modify(
+                                    userId='me',
+                                    id=msg_id,
+                                    body={'addLabelIds': [target_label_id]}
+                                ).execute()
+
+                                stats['labeled'] += 1
+                                stats['categories'][suggested_label] = stats['categories'].get(suggested_label, 0) + 1
+
+                                # Show progress for first few in batch
+                                if len([x for x in batch_ids if batch_ids.index(x) <= batch_ids.index(msg_id)]) <= 3:
+                                    sender_short = email_data['sender'].split('@')[0] if '@' in email_data['sender'] else email_data['sender'][:30]
+                                    subject_short = email_data['subject'][:40] + "..." if len(email_data['subject']) > 40 else email_data['subject']
+                                    print(f"    ✅ {sender_short[:20]}: {subject_short} → {suggested_label}")
+                            else:
+                                stats['skipped'] += 1
+                        else:
+                            stats['skipped'] += 1
+
+                        # Rate limiting
+                        if stats['processed'] % 20 == 0:
+                            time.sleep(1)
+
+                    except HttpError as e:
+                        if e.resp.status == 429:  # Rate limit
+                            print(f"    ⏳ Rate limit hit, waiting 5 seconds...")
+                            time.sleep(5)
+                        else:
+                            stats['errors'] += 1
+                            if stats['errors'] <= 3:  # Only show first few errors
+                                print(f"    ❌ Error processing email: {e}")
+                    except Exception as e:
+                        stats['errors'] += 1
+                        if stats['errors'] <= 3:
+                            print(f"    ❌ Unexpected error: {e}")
+
+                # Progress update
+                progress = ((i + batch_size) / len(all_message_ids)) * 100
+                print(f"📈 Progress: {min(100, progress):.1f}% complete")
+
+                # Batch delay
+                time.sleep(2)
+
+            # Final statistics
+            print("\n" + "=" * 60)
+            print("📊 EMAIL LABELING SUMMARY")
+            print("=" * 60)
+            print(f"📧 Total processed: {stats['processed']}")
+            print(f"✅ Successfully labeled: {stats['labeled']}")
+            print(f"⏭️  Skipped (already labeled/no category): {stats['skipped']}")
+            print(f"❌ Errors: {stats['errors']}")
+
+            if stats['categories']:
+                print(f"\n🏷️  Labels applied:")
+                for label, count in sorted(stats['categories'].items(), key=lambda x: x[1], reverse=True):
+                    print(f"   {label}: {count} emails")
+
+            return stats
+
+        except Exception as e:
+            print(f"❌ Email scanning failed: {e}")
+            return {'error': str(e)}
+
     def generate_report(self) -> str:
         """Generate a summary report"""
         report = []
@@ -560,6 +846,12 @@ def main():
                        help='Migrate emails from one label to another')
     parser.add_argument('--delete-labels', nargs='+', metavar='LABEL_NAME',
                        help='Delete specified labels')
+    parser.add_argument('--scan-emails', action='store_true',
+                       help='Scan and auto-label existing emails')
+    parser.add_argument('--max-emails', type=int, default=1000,
+                       help='Maximum emails to process during scanning (default: 1000)')
+    parser.add_argument('--days-back', type=int, default=30,
+                       help='How many days back to scan emails (0 = all emails, default: 30)')
 
     args = parser.parse_args()
 
@@ -590,6 +882,15 @@ def main():
         deleted, failed = automation.delete_labels(args.delete_labels)
         print(f"\nDeleted {deleted} labels, Failed: {failed}")
         return 0 if failed == 0 else 1
+
+    if args.scan_emails:
+        stats = automation.scan_and_label_emails(args.max_emails, args.days_back)
+        if 'error' in stats:
+            print(f"\nEmail scanning failed: {stats['error']}")
+            return 1
+        else:
+            print(f"\nEmail scanning completed: {stats.get('labeled', 0)} emails labeled")
+            return 0
 
     if args.labels_only:
         created, exists, failed = automation.create_labels()

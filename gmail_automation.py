@@ -58,6 +58,7 @@ class GmailAutomation:
         self.token_file = token_file
         self.service = None
         self.labels_cache = {}
+        self.categories_config = self.load_categories_config()
 
         # Predefined labels with Gmail-approved colors
         self.labels = [
@@ -487,131 +488,147 @@ class GmailAutomation:
             print(f"  ❌ Error clearing filters: {error}")
             return 0
 
-    def categorize_email(self, email_data: Dict) -> Optional[str]:
-        """
-        Categorize an email based on sender, subject, and content patterns.
-        Returns the appropriate label name or None if no category matches.
-        """
+    def load_categories_config(self) -> Dict:
+        """Load email categorization configuration from JSON file"""
+        config_file = os.path.join(os.path.dirname(__file__), 'email_categories.json')
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print("⚠️  Categories config file not found, using fallback rules")
+            return self.get_fallback_config()
+        except json.JSONDecodeError as e:
+            print(f"⚠️  Invalid categories config: {e}, using fallback rules")
+            return self.get_fallback_config()
+
+    def get_fallback_config(self) -> Dict:
+        """Fallback configuration if JSON file is not available"""
+        return {
+            "categories": {
+                "🏦 Banking & Finance": {
+                    "priority": 8,
+                    "domains": {"high_confidence": ["hdfcbank.com", "icicibank.com", "paytm.com"]},
+                    "keywords": {"subject_medium": ["payment", "transaction", "bank", "otp"]}
+                }
+            },
+            "global_settings": {"confidence_threshold": 0.6},
+            "scoring_weights": {"domain_high_confidence": 1.0, "subject_medium": 0.4}
+        }
+
+    def calculate_category_score(self, email_data: Dict, category_name: str, category_config: Dict) -> float:
+        """Calculate confidence score for a specific category"""
         sender = email_data.get('sender', '').lower()
         subject = email_data.get('subject', '').lower()
         snippet = email_data.get('snippet', '').lower()
 
-        # Banking & Finance patterns
-        banking_domains = [
-            'hdfcbank.com', 'icicibank.com', 'axisbank.com', 'sbi.co.in', 'kotak.com',
-            'americanexpress.com', 'cred.club', 'paytm.com', 'phonepe.com', 'googlepay.com'
-        ]
-        banking_keywords = [
-            'statement', 'transaction', 'credit card', 'debit card', 'otp', 'payment',
-            'bank', 'account', 'balance', 'emi', 'loan', 'credit', 'debit'
-        ]
+        score = 0.0
+        weights = self.categories_config.get('scoring_weights', {})
 
-        if (any(domain in sender for domain in banking_domains) or
-            any(keyword in subject + snippet for keyword in banking_keywords)):
-            return '🏦 Banking & Finance'
+        # Domain scoring
+        domains = category_config.get('domains', {})
+        for confidence_level, domain_list in domains.items():
+            weight_key = f"domain_{confidence_level}"
+            weight = weights.get(weight_key, 0.5)
 
-        # Investments & Trading patterns
-        investment_domains = [
-            'zerodha.com', 'groww.in', 'upstox.com', 'angelone.in', 'kfintech.com',
-            'camsonline.com', 'indmoney.com', 'kuvera.in'
-        ]
-        investment_keywords = [
-            'contract note', 'mutual fund', 'demat', 'sip', 'portfolio', 'investment',
-            'trading', 'shares', 'stock', 'dividend', 'nfo', 'nav'
-        ]
+            for domain in domain_list:
+                if domain.lower() in sender:
+                    score += weight
+                    break  # Only count once per confidence level
 
-        if (any(domain in sender for domain in investment_domains) or
-            any(keyword in subject + snippet for keyword in investment_keywords)):
-            return '📈 Investments & Trading'
+        # Subject keyword scoring
+        keywords = category_config.get('keywords', {})
+        for keyword_type, keyword_list in keywords.items():
+            if keyword_type.startswith('subject_'):
+                weight = weights.get(keyword_type, 0.3)
+                for keyword in keyword_list:
+                    if keyword.lower() in subject:
+                        score += weight
 
-        # Security & Alerts patterns
-        security_keywords = [
-            'security alert', 'suspicious activity', 'login attempt', 'password',
-            'verification', 'two-factor', '2fa', 'unauthorized', 'breach'
-        ]
-        security_senders = ['google', 'apple', 'microsoft', 'security', 'noreply']
+        # Content keyword scoring (if enabled)
+        if self.categories_config.get('global_settings', {}).get('enable_content_analysis', True):
+            for keyword_type, keyword_list in keywords.items():
+                if keyword_type.startswith('content_'):
+                    weight = weights.get(keyword_type, 0.2)
+                    for keyword in keyword_list:
+                        if keyword.lower() in snippet:
+                            score += weight
 
-        if (any(keyword in subject + snippet for keyword in security_keywords) or
-            any(word in sender for word in security_senders) and 'security' in subject + snippet):
-            return '🔔 Alerts & Security'
+        # Exclusion penalties
+        exclusions = category_config.get('exclusions', [])
+        exclusion_penalty = weights.get('exclusion_penalty', -0.5)
+        for exclusion in exclusions:
+            if exclusion.lower() in subject + ' ' + snippet:
+                score += exclusion_penalty
 
-        # Shopping & Orders patterns
-        shopping_domains = [
-            'amazon.in', 'flipkart.com', 'myntra.com', 'ajio.com', 'nykaa.com',
-            'tatacliq.com', 'meesho.com', 'snapdeal.com'
-        ]
-        shopping_keywords = [
-            'order', 'delivery', 'shipped', 'tracking', 'invoice', 'receipt',
-            'purchase', 'cart', 'checkout', 'payment successful'
-        ]
+        # Priority bonus (higher priority categories get slight boost)
+        priority = category_config.get('priority', 1)
+        priority_bonus = weights.get('priority_bonus', 0.1)
+        score += (priority / 10) * priority_bonus
 
-        if (any(domain in sender for domain in shopping_domains) or
-            any(keyword in subject + snippet for keyword in shopping_keywords)):
-            return '🛒 Shopping & Orders'
+        return max(0.0, score)  # Ensure non-negative score
 
-        # Travel & Transport patterns
-        travel_domains = [
-            'makemytrip.com', 'goibibo.com', 'irctc.co.in', 'indigo.com', 'airindia.in',
-            'vistara.com', 'uber.com', 'ola.in', 'booking.com', 'agoda.com'
-        ]
-        travel_keywords = [
-            'ticket', 'booking', 'pnr', 'flight', 'train', 'hotel', 'travel',
-            'itinerary', 'boarding', 'reservation'
-        ]
+    def categorize_email(self, email_data: Dict) -> Optional[str]:
+        """
+        Advanced email categorization using data dictionary and confidence scoring.
+        Returns the highest confidence category or None if below threshold.
+        """
+        categories = self.categories_config.get('categories', {})
+        global_settings = self.categories_config.get('global_settings', {})
+        confidence_threshold = global_settings.get('confidence_threshold', 0.6)
 
-        if (any(domain in sender for domain in travel_domains) or
-            any(keyword in subject + snippet for keyword in travel_keywords)):
-            return '✈️ Travel & Transport'
+        # Calculate scores for all categories
+        category_scores = {}
+        for category_name, category_config in categories.items():
+            score = self.calculate_category_score(email_data, category_name, category_config)
+            if score > 0:
+                category_scores[category_name] = score
 
-        # Insurance & Services patterns
-        insurance_domains = [
-            'policybazaar.com', 'acko.com', 'hdfcergo.com', 'digitinsurance.com',
-            'tata1mg.com', '1mg.com'
-        ]
-        insurance_keywords = [
-            'policy', 'premium', 'renewal', 'claim', 'insurance', 'health',
-            'medical', 'doctor', 'hospital', 'pharmacy'
-        ]
+        # Return highest scoring category if above threshold
+        if category_scores:
+            best_category = max(category_scores, key=category_scores.get)
+            best_score = category_scores[best_category]
 
-        if (any(domain in sender for domain in insurance_domains) or
-            any(keyword in subject + snippet for keyword in insurance_keywords)):
-            return '🏥 Insurance & Services'
-
-        # Receipts & Archive patterns
-        receipt_domains = [
-            'netflix.com', 'primevideo.com', 'hotstar.com', 'spotify.com',
-            'swiggy.in', 'zomato.com', 'bookmyshow.com', 'dunzo.com'
-        ]
-        receipt_keywords = [
-            'receipt', 'invoice', 'bill', 'subscription', 'renewal', 'payment successful',
-            'order delivered', 'booking confirmation'
-        ]
-
-        if (any(domain in sender for domain in receipt_domains) or
-            any(keyword in subject + snippet for keyword in receipt_keywords)):
-            return '📦 Receipts & Archive'
-
-        # Marketing & News patterns
-        news_keywords = [
-            'newsletter', 'unsubscribe', 'news', 'update', 'briefing',
-            'marketing', 'promotional', 'offer', 'deal', 'sale'
-        ]
-
-        if any(keyword in subject + snippet for keyword in news_keywords):
-            return '📰 Marketing & News'
-
-        # Personal & Work patterns (catch-all for internal/personal emails)
-        work_keywords = [
-            'meeting', 'project', 'deadline', 'report', 'document',
-            'colleague', 'team', 'office', 'work'
-        ]
-
-        if any(keyword in subject + snippet for keyword in work_keywords):
-            return '👤 Personal & Work'
+            if best_score >= confidence_threshold:
+                return best_category
 
         return None
 
-    def scan_and_label_emails(self, max_emails: int = 1000, days_back: int = 30) -> Dict[str, int]:
+    def categorize_email_debug(self, email_data: Dict) -> Dict:
+        """
+        Debug version that returns detailed scoring information.
+        Useful for understanding why emails are categorized a certain way.
+        """
+        categories = self.categories_config.get('categories', {})
+        global_settings = self.categories_config.get('global_settings', {})
+        confidence_threshold = global_settings.get('confidence_threshold', 0.6)
+
+        # Calculate scores for all categories
+        category_scores = {}
+        for category_name, category_config in categories.items():
+            score = self.calculate_category_score(email_data, category_name, category_config)
+            category_scores[category_name] = round(score, 3)
+
+        # Determine best category
+        best_category = None
+        best_score = 0
+        if category_scores:
+            best_category = max(category_scores, key=category_scores.get)
+            best_score = category_scores[best_category]
+
+        return {
+            'email': {
+                'sender': email_data.get('sender', '')[:50],
+                'subject': email_data.get('subject', '')[:60],
+                'snippet': email_data.get('snippet', '')[:80] + '...'
+            },
+            'scores': dict(sorted(category_scores.items(), key=lambda x: x[1], reverse=True)),
+            'best_category': best_category if best_score >= confidence_threshold else None,
+            'confidence': best_score,
+            'threshold': confidence_threshold,
+            'passed_threshold': best_score >= confidence_threshold
+        }
+
+    def scan_and_label_emails(self, max_emails: int = 1000, days_back: int = 30, debug: bool = False) -> Dict[str, int]:
         """
         Scan existing emails and apply appropriate labels based on content analysis.
 
@@ -699,8 +716,20 @@ class GmailAutomation:
                             'snippet': email.get('snippet', '')
                         }
 
-                        # Categorize email
-                        suggested_label = self.categorize_email(email_data)
+                        # Categorize email (with debug info if requested)
+                        if debug:
+                            debug_info = self.categorize_email_debug(email_data)
+                            suggested_label = debug_info['best_category']
+
+                            # Show debug info for first few emails in batch
+                            if len([x for x in batch_ids if batch_ids.index(x) <= batch_ids.index(msg_id)]) <= 2:
+                                print(f"    🔍 DEBUG: {debug_info['email']['sender'][:30]}")
+                                print(f"       Subject: {debug_info['email']['subject']}")
+                                print(f"       Scores: {debug_info['scores']}")
+                                print(f"       Result: {suggested_label} (confidence: {debug_info['confidence']:.2f})")
+                        else:
+                            suggested_label = self.categorize_email(email_data)
+
                         stats['processed'] += 1
 
                         if suggested_label and suggested_label in existing_labels:
@@ -852,6 +881,8 @@ def main():
                        help='Maximum emails to process during scanning (default: 1000)')
     parser.add_argument('--days-back', type=int, default=30,
                        help='How many days back to scan emails (0 = all emails, default: 30)')
+    parser.add_argument('--debug-categorization', action='store_true',
+                       help='Show detailed categorization scoring for debugging')
 
     args = parser.parse_args()
 
@@ -884,7 +915,7 @@ def main():
         return 0 if failed == 0 else 1
 
     if args.scan_emails:
-        stats = automation.scan_and_label_emails(args.max_emails, args.days_back)
+        stats = automation.scan_and_label_emails(args.max_emails, args.days_back, args.debug_categorization)
         if 'error' in stats:
             print(f"\nEmail scanning failed: {stats['error']}")
             return 1

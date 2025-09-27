@@ -6,7 +6,8 @@
 
 - 🏷️ **Smart Label Creation**: Creates organized labels with custom colors
 - 🔍 **Advanced Filters**: Auto-categorizes emails with importance marking and archiving
-- 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails using AI-powered categorization
+- 🧠 **Data Dictionary-Based Categorization**: Advanced scoring system using comprehensive domain and keyword dictionaries
+- 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails with confidence scoring
 - 📧 **Email Migration**: Batch migrate emails between labels with rate limiting
 - 🗑️ **Label Management**: Delete old labels and consolidate email organization
 - 🧹 **Filter Cleanup**: Clear existing filters for fresh setup
@@ -14,6 +15,7 @@
 - ✅ **Comprehensive Validation**: Environment validation and robust error handling
 - 🚀 **Modular Operations**: Run individual operations or complete automation
 - ⚡ **Batch Processing**: Efficient handling of large email volumes with progress tracking
+- 🔧 **Configurable Rules**: JSON-based configuration for easy customization of categorization rules
 
 ## Quick Start
 
@@ -98,6 +100,7 @@ The automation creates intelligent filters with advanced capabilities:
 ```
 gmail_api_automation/
 ├── gmail_automation.py     # Main automation script
+├── email_categories.json   # Categorization rules and scoring weights
 ├── requirements.txt        # Python dependencies
 ├── credentials.json        # OAuth credentials (you provide)
 ├── token.json             # Auto-generated after first run
@@ -121,6 +124,7 @@ Basic Options:
   --scan-emails        Scan and auto-label existing emails
   --max-emails N       Maximum emails to process (default: 1000)
   --days-back N        Days back to scan (0 = all emails, default: 30)
+  --debug-categorization  Show detailed scoring for debugging
 
 Advanced Operations:
   --clear-filters              Clear all existing filters
@@ -133,6 +137,7 @@ Examples:
   python gmail_automation.py --scan-emails                    # Scan last 30 days
   python gmail_automation.py --scan-emails --max-emails 2000  # Process more emails
   python gmail_automation.py --scan-emails --days-back 90     # Scan last 3 months
+  python gmail_automation.py --scan-emails --debug-categorization  # Debug scoring
 
   # Full setup with filter cleanup
   python gmail_automation.py --clear-filters
@@ -147,6 +152,41 @@ Examples:
   python gmail_automation.py                    # Setup labels & filters
   python gmail_automation.py --scan-emails      # Auto-label existing emails
 ```
+
+## 🎛️ Customizing Categorization Rules
+
+The email categorization system uses a JSON configuration file (`email_categories.json`) that you can modify to:
+
+### **Add New Domains:**
+```json
+"domains": {
+  "high_confidence": ["newbank.com", "newservice.in"],
+  "medium_confidence": ["payment-gateway.com"]
+}
+```
+
+### **Add New Keywords:**
+```json
+"keywords": {
+  "subject_high": ["new important term", "urgent notification"],
+  "content_medium": ["background keyword"]
+}
+```
+
+### **Adjust Scoring Weights:**
+```json
+"scoring_weights": {
+  "domain_high_confidence": 1.2,  // Higher = more weight
+  "confidence_threshold": 0.4     // Lower = more permissive
+}
+```
+
+### **Add Exclusions:**
+```json
+"exclusions": ["promotional", "marketing offer"]
+```
+
+The system will automatically reload the configuration on each run, making it easy to fine-tune categorization rules.
 
 ## Security & Privacy
 

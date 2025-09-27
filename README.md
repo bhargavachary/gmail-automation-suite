@@ -1,6 +1,6 @@
 # Gmail Automation Suite v3.0
 
-A comprehensive, streamlined tool for Gmail management that automates label creation, filter setup, email migration, and inbox organization.
+🚀 A comprehensive, streamlined tool for Gmail management that automates label creation, filter setup, email migration, and inbox organization with OAuth 2.0 security.
 
 ## ✨ Features
 

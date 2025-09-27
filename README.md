@@ -83,6 +83,11 @@ python gmail_automation.py --ml-info                        # Show ML model stat
 python gmail_automation.py --bootstrap-training             # Create synthetic training data & train initial model
 python gmail_automation.py --disable-ml                     # Use only rule-based categorization
 python gmail_automation.py --scan-emails --debug-categorization  # Show AI decision process
+
+# ⚡ NEW: Incremental Labeling (Extended Version)
+python gmail_automation_extended.py --scan-unlabeled        # Only label unlabeled emails (10x faster!)
+python gmail_automation_extended.py --scan-all-unlabeled    # Scan ALL unlabeled emails
+python gmail_automation_extended.py --scan-unlabeled --days-back 1  # Daily maintenance mode
 ```
 
 ## Labels Created
@@ -254,6 +259,24 @@ Skip all confirmations (use with extreme caution):
 python gmail_automation.py --cleanup --force
 python gmail_automation.py --reset --force
 ```
+
+## ⚡ Extended Version - Incremental Labeling
+
+For **periodic maintenance** and **faster processing**, use the extended version:
+
+**`gmail_automation_extended.py`** - Features:
+- 🎯 **Smart Unlabeled Detection** - Only processes emails without automation labels
+- ⚡ **10x Faster** - Skips already-labeled emails
+- 📊 **Progress Tracking** - State persistence across sessions
+- 🔄 **Resume Capability** - Continue interrupted scans
+- 📈 **Efficiency Reports** - Detailed statistics
+
+**Perfect for:**
+- Daily maintenance: `--scan-unlabeled --days-back 1`
+- Weekly cleanup: `--scan-unlabeled --days-back 7`
+- Complete audit: `--scan-all-unlabeled`
+
+See [`INCREMENTAL_USAGE.md`](INCREMENTAL_USAGE.md) for detailed usage guide.
 
 ## Security & Privacy
 

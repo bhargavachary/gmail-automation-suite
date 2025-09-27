@@ -488,6 +488,128 @@ class GmailAutomation:
             print(f"  ❌ Error clearing filters: {error}")
             return 0
 
+    def cleanup_automation_labels_and_filters(self, force: bool = False) -> Tuple[int, int]:
+        """
+        Remove all labels and filters created by this automation suite.
+
+        Args:
+            force: Skip confirmation prompts if True
+
+        Returns:
+            Tuple of (labels_deleted, filters_deleted)
+        """
+        print("\n🧹 Gmail Automation Cleanup")
+        print("=" * 50)
+        print("⚠️  This will remove ALL labels and filters created by this automation.")
+        print("📧 Emails will NOT be deleted - only labels will be removed.")
+
+        if not force:
+            print("\n🏷️  Labels that will be deleted:")
+            for label in self.labels:
+                print(f"   • {label.name}")
+
+            print("\n🔍 All existing filters will also be cleared.")
+
+            confirm = input("\n❓ Are you sure you want to proceed? (type 'yes' to confirm): ")
+            if confirm.lower() != 'yes':
+                print("❌ Cleanup cancelled.")
+                return 0, 0
+
+        print("\n🚀 Starting cleanup process...")
+
+        # Get existing labels before cleanup
+        existing_labels = self.get_existing_labels()
+        automation_label_names = [label.name for label in self.labels]
+
+        # Step 1: Remove all filters first
+        print("\n🔍 Clearing all filters...")
+        filters_deleted = self.clear_existing_filters()
+
+        # Step 2: Remove email labels from messages (optional - just remove the labels)
+        print("\n📧 Removing labels from emails...")
+        emails_processed = 0
+        for label_name in automation_label_names:
+            if label_name in existing_labels:
+                label_id = existing_labels[label_name]
+
+                # Find emails with this label
+                try:
+                    query = f'label:{label_id}'
+                    response = self.service.users().messages().list(
+                        userId='me', q=query, maxResults=500
+                    ).execute()
+
+                    messages = response.get('messages', [])
+                    if messages:
+                        print(f"   📩 Found {len(messages)} emails with label '{label_name}'")
+
+                        # Remove label from emails in batches
+                        for i in range(0, len(messages), 100):
+                            batch = messages[i:i + 100]
+                            batch_ids = [msg['id'] for msg in batch]
+
+                            self.service.users().messages().batchModify(
+                                userId='me',
+                                body={'ids': batch_ids, 'removeLabelIds': [label_id]}
+                            ).execute()
+
+                            emails_processed += len(batch_ids)
+                            time.sleep(0.5)  # Rate limiting
+
+                except Exception as e:
+                    print(f"   ⚠️  Could not process emails for {label_name}: {e}")
+
+        print(f"   ✅ Processed {emails_processed} emails")
+
+        # Step 3: Delete the labels themselves
+        print("\n🗑️  Deleting automation labels...")
+        labels_deleted, labels_failed = self.delete_labels(automation_label_names)
+
+        # Final summary
+        print("\n" + "=" * 50)
+        print("🎯 CLEANUP SUMMARY")
+        print("=" * 50)
+        print(f"🗑️  Labels deleted: {labels_deleted}")
+        print(f"🔍 Filters deleted: {filters_deleted}")
+        print(f"📧 Emails processed: {emails_processed}")
+        print(f"❌ Failed operations: {labels_failed}")
+
+        if labels_failed == 0:
+            print("\n✅ Gmail automation cleanup completed successfully!")
+            print("📧 Your emails are safe - only organization labels were removed.")
+        else:
+            print(f"\n⚠️  Cleanup completed with {labels_failed} errors")
+
+        return labels_deleted, filters_deleted
+
+    def reset_gmail_to_default(self, force: bool = False) -> bool:
+        """
+        Complete reset: Remove all automation labels, filters, and return Gmail to default state.
+        """
+        print("\n🔄 Gmail Complete Reset")
+        print("=" * 50)
+        print("⚠️  This will completely undo ALL Gmail automation changes:")
+        print("   • Remove all automation labels")
+        print("   • Clear all filters")
+        print("   • Remove labels from existing emails")
+        print("   • Reset Gmail to pre-automation state")
+
+        if not force:
+            confirm = input("\n❓ Type 'RESET' to confirm complete reset: ")
+            if confirm != 'RESET':
+                print("❌ Reset cancelled.")
+                return False
+
+        print("\n🚀 Performing complete Gmail reset...")
+
+        # Perform cleanup
+        labels_deleted, filters_deleted = self.cleanup_automation_labels_and_filters(force=True)
+
+        print("\n🎉 Gmail has been reset to pre-automation state!")
+        print("✅ You can now re-run the automation with fresh settings if desired.")
+
+        return True
+
     def load_categories_config(self) -> Dict:
         """Load email categorization configuration from JSON file"""
         config_file = os.path.join(os.path.dirname(__file__), 'email_categories.json')
@@ -883,6 +1005,12 @@ def main():
                        help='How many days back to scan emails (0 = all emails, default: 30)')
     parser.add_argument('--debug-categorization', action='store_true',
                        help='Show detailed categorization scoring for debugging')
+    parser.add_argument('--cleanup', action='store_true',
+                       help='Remove all automation labels and filters (with confirmation)')
+    parser.add_argument('--reset', action='store_true',
+                       help='Complete reset - remove all automation changes (requires RESET confirmation)')
+    parser.add_argument('--force', action='store_true',
+                       help='Skip confirmation prompts for cleanup/reset operations')
 
     args = parser.parse_args()
 
@@ -892,6 +1020,16 @@ def main():
     # Validate and authenticate
     if not automation.validate_environment() or not automation.authenticate():
         return 1
+
+    # Handle cleanup operations first (destructive operations)
+    if args.reset:
+        success = automation.reset_gmail_to_default(args.force)
+        return 0 if success else 1
+
+    if args.cleanup:
+        labels_deleted, filters_deleted = automation.cleanup_automation_labels_and_filters(args.force)
+        print(f"\nCleanup completed: {labels_deleted} labels and {filters_deleted} filters removed")
+        return 0
 
     # Handle individual operations
     if args.scan_promos:

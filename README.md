@@ -56,6 +56,11 @@ python gmail_automation.py --scan-promos                    # Scan promotional e
 python gmail_automation.py --migrate-labels "Old Label" "New Label"  # Migrate emails
 python gmail_automation.py --delete-labels "Label1" "Label2"         # Delete labels
 python gmail_automation.py --clear-filters                           # Clear all filters
+
+# 🧹 Cleanup & Reset Operations
+python gmail_automation.py --cleanup                        # Remove all automation (with confirmation)
+python gmail_automation.py --reset                          # Complete reset (requires typing 'RESET')
+python gmail_automation.py --cleanup --force                # Skip confirmations (dangerous!)
 ```
 
 ## Labels Created
@@ -130,7 +135,12 @@ Advanced Operations:
   --clear-filters              Clear all existing filters
   --migrate-labels FROM TO     Migrate emails from one label to another
   --delete-labels LABEL...     Delete specified labels
-  -h, --help                   Show help message
+
+🧹 Cleanup & Reset Options:
+  --cleanup            Remove all automation labels and filters (with confirmation)
+  --reset              Complete Gmail reset (requires typing 'RESET')
+  --force              Skip confirmation prompts (use with caution)
+  -h, --help           Show help message
 
 Examples:
   # 🤖 Intelligent email scanning
@@ -187,6 +197,41 @@ The email categorization system uses a JSON configuration file (`email_categorie
 ```
 
 The system will automatically reload the configuration on each run, making it easy to fine-tune categorization rules.
+
+## 🧹 Cleanup & Reset Operations
+
+### **Safe Cleanup (--cleanup)**
+Removes all automation labels and filters while keeping your emails safe:
+```bash
+python gmail_automation.py --cleanup
+```
+
+**What it does:**
+- ✅ Shows list of labels to be deleted
+- ✅ Requires typing 'yes' to confirm
+- ✅ Removes labels from all emails first
+- ✅ Deletes automation labels
+- ✅ Clears all filters
+- ✅ Preserves all email content
+
+### **Complete Reset (--reset)**
+Nuclear option - completely undo all automation:
+```bash
+python gmail_automation.py --reset
+```
+
+**What it does:**
+- ⚠️ Requires typing 'RESET' to confirm
+- 🔄 Returns Gmail to pre-automation state
+- 🗑️ Removes all traces of automation
+- 📧 Your emails remain untouched
+
+### **Force Mode (--force)**
+Skip all confirmations (use with extreme caution):
+```bash
+python gmail_automation.py --cleanup --force
+python gmail_automation.py --reset --force
+```
 
 ## Security & Privacy
 

@@ -1,13 +1,22 @@
-# Gmail Automation Suite v3.0
+# Gmail Automation Suite v4.0 - ML Enhanced
 
-🚀 A comprehensive, streamlined tool for Gmail management that automates label creation, filter setup, email migration, and inbox organization with OAuth 2.0 security.
+🚀 An advanced, AI-powered tool for Gmail management that combines machine learning with rule-based categorization for superior email organization. Features deep learning models, topic modeling, and hybrid classification systems.
 
 ## ✨ Features
 
+### 🤖 **AI & Machine Learning**
+- 🧠 **BERT-Based Classification**: Uses transformer models for semantic email understanding
+- 📊 **Topic Modeling**: Automatic topic discovery with BERTopic and UMAP clustering
+- 🔗 **Hybrid AI System**: Combines rule-based + ML predictions for superior accuracy
+- 📈 **Incremental Learning**: Continuously improves with new labeled examples
+- 🎯 **Confidence Scoring**: Advanced scoring system with method selection logic
+- 🔍 **Feature Engineering**: Sophisticated text preprocessing and feature extraction
+
+### 🏷️ **Gmail Management**
 - 🏷️ **Smart Label Creation**: Creates organized labels with custom colors
 - 🔍 **Advanced Filters**: Auto-categorizes emails with importance marking and archiving
 - 🧠 **Data Dictionary-Based Categorization**: Advanced scoring system using comprehensive domain and keyword dictionaries
-- 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails with confidence scoring
+- 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails with AI-powered classification
 - 📧 **Email Migration**: Batch migrate emails between labels with rate limiting
 - 🗑️ **Label Management**: Delete old labels and consolidate email organization
 - 🧹 **Filter Cleanup**: Clear existing filters for fresh setup
@@ -30,8 +39,15 @@
 ### 2. Install Dependencies
 
 ```bash
+# Create virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install all dependencies (including ML packages)
 pip install -r requirements.txt
 ```
+
+**Note**: The ML dependencies include PyTorch, Transformers, and other packages that may take several minutes to install.
 
 ### 3. Run Automation
 
@@ -61,6 +77,12 @@ python gmail_automation.py --clear-filters                           # Clear all
 python gmail_automation.py --cleanup                        # Remove all automation (with confirmation)
 python gmail_automation.py --reset                          # Complete reset (requires typing 'RESET')
 python gmail_automation.py --cleanup --force                # Skip confirmations (dangerous!)
+
+# 🤖 AI/ML Operations
+python gmail_automation.py --ml-info                        # Show ML model status
+python gmail_automation.py --bootstrap-training             # Create synthetic training data & train initial model
+python gmail_automation.py --disable-ml                     # Use only rule-based categorization
+python gmail_automation.py --scan-emails --debug-categorization  # Show AI decision process
 ```
 
 ## Labels Created

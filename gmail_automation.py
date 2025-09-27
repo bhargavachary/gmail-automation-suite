@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-Gmail Automation Suite - Streamlined & Consolidated
+Gmail Automation Suite - Advanced ML-Powered Email Categorization
 
 A comprehensive tool for Gmail management that includes:
-- Label creation and management with advanced filters
+- AI-powered email categorization using BERT and topic modeling
+- Advanced label creation and management with smart filters
+- Hybrid rule-based + machine learning classification
 - Smart filter creation with batch processing
 - Label consolidation and migration
 - Promotional email management
 - Inbox organization and cleanup
-- Optimized filter system with importance marking
+- Incremental learning capabilities
 
 Author: Gmail Automation Suite
-Version: 3.0.0
+Version: 4.0.0 - ML Enhanced
 """
 
 import os
@@ -19,6 +21,7 @@ import re
 import time
 import json
 import argparse
+import warnings
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from google.auth.transport.requests import Request
@@ -26,6 +29,14 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# Import ML categorizer
+try:
+    from email_ml_categorizer import EmailMLCategorizer, create_synthetic_training_data
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    warnings.warn("ML categorizer not available. Run: pip install -r requirements.txt")
 
 # Gmail API scopes
 SCOPES = [
@@ -53,12 +64,24 @@ class Filter:
 class GmailAutomation:
     """Main Gmail automation class"""
 
-    def __init__(self, credentials_file: str = 'credentials.json', token_file: str = 'token.json'):
+    def __init__(self, credentials_file: str = 'credentials.json', token_file: str = 'token.json',
+                 use_ml: bool = True):
         self.credentials_file = credentials_file
         self.token_file = token_file
         self.service = None
         self.labels_cache = {}
         self.categories_config = self.load_categories_config()
+
+        # Initialize ML categorizer
+        self.use_ml = use_ml and ML_AVAILABLE
+        self.ml_categorizer = None
+        if self.use_ml:
+            try:
+                self.ml_categorizer = EmailMLCategorizer(categories_config=self.categories_config)
+                print("🤖 ML categorizer initialized successfully")
+            except Exception as e:
+                print(f"⚠️ ML categorizer initialization failed: {e}")
+                self.use_ml = False
 
         # Predefined labels with Gmail-approved colors
         self.labels = [
@@ -610,6 +633,172 @@ class GmailAutomation:
 
         return True
 
+    def diagnose_label_visibility(self) -> Dict:
+        """
+        Diagnose why labels might not be visible in Gmail web interface.
+        Returns detailed information about label status and visibility.
+        """
+        print("\n🔍 Diagnosing Label Visibility Issues")
+        print("=" * 50)
+
+        diagnosis = {
+            'total_labels': 0,
+            'automation_labels': {},
+            'visibility_issues': [],
+            'recommendations': []
+        }
+
+        try:
+            # Get all labels
+            results = self.service.users().labels().list(userId='me').execute()
+            all_labels = results.get('labels', [])
+            diagnosis['total_labels'] = len(all_labels)
+
+            print(f"📋 Found {len(all_labels)} total labels in your Gmail account")
+
+            # Check automation labels specifically
+            automation_label_names = [label.name for label in self.labels]
+
+            print(f"\n🔍 Checking {len(automation_label_names)} automation labels:")
+
+            for label_name in automation_label_names:
+                # Find the label in the API response
+                found_label = None
+                for label in all_labels:
+                    if label['name'] == label_name:
+                        found_label = label
+                        break
+
+                if found_label:
+                    label_info = {
+                        'id': found_label['id'],
+                        'name': found_label['name'],
+                        'type': found_label.get('type', 'user'),
+                        'labelListVisibility': found_label.get('labelListVisibility', 'unknown'),
+                        'messageListVisibility': found_label.get('messageListVisibility', 'unknown'),
+                        'messagesTotal': found_label.get('messagesTotal', 0),
+                        'messagesUnread': found_label.get('messagesUnread', 0),
+                        'threadsTotal': found_label.get('threadsTotal', 0),
+                        'threadsUnread': found_label.get('threadsUnread', 0),
+                        'color': found_label.get('color', {})
+                    }
+
+                    diagnosis['automation_labels'][label_name] = label_info
+
+                    # Check visibility settings
+                    list_vis = label_info['labelListVisibility']
+                    msg_vis = label_info['messageListVisibility']
+
+                    print(f"   ✅ {label_name}")
+                    print(f"      ID: {label_info['id']}")
+                    print(f"      List Visibility: {list_vis}")
+                    print(f"      Message Visibility: {msg_vis}")
+                    print(f"      Total Messages: {label_info['messagesTotal']}")
+                    print(f"      Color: {label_info['color']}")
+
+                    # Check for visibility issues
+                    if list_vis == 'labelHide':
+                        diagnosis['visibility_issues'].append(f"{label_name}: Hidden in label list")
+                    if msg_vis == 'hide':
+                        diagnosis['visibility_issues'].append(f"{label_name}: Hidden in message list")
+                    if label_info['messagesTotal'] == 0:
+                        diagnosis['visibility_issues'].append(f"{label_name}: No messages labeled")
+
+                else:
+                    print(f"   ❌ {label_name} - NOT FOUND")
+                    diagnosis['visibility_issues'].append(f"{label_name}: Label not found in Gmail")
+
+            # Generate recommendations
+            if diagnosis['visibility_issues']:
+                print(f"\n⚠️  Found {len(diagnosis['visibility_issues'])} potential issues:")
+                for issue in diagnosis['visibility_issues']:
+                    print(f"   • {issue}")
+
+                # Generate recommendations
+                if any('Hidden in label list' in issue for issue in diagnosis['visibility_issues']):
+                    diagnosis['recommendations'].append("Fix label list visibility with --fix-visibility")
+
+                if any('No messages labeled' in issue for issue in diagnosis['visibility_issues']):
+                    diagnosis['recommendations'].append("Run email scanning to apply labels: --scan-emails")
+
+                if any('Label not found' in issue for issue in diagnosis['visibility_issues']):
+                    diagnosis['recommendations'].append("Create missing labels: --labels-only")
+
+            else:
+                print("\n✅ All automation labels appear to be configured correctly!")
+
+            # Gmail web interface tips
+            print(f"\n💡 Gmail Web Interface Tips:")
+            print(f"   • Labels appear in the left sidebar under 'Labels'")
+            print(f"   • You may need to scroll down or click 'More' to see all labels")
+            print(f"   • Labels only appear if they have messages assigned")
+            print(f"   • Try refreshing your Gmail page (Ctrl+F5 or Cmd+R)")
+            print(f"   • Check if labels are collapsed - look for a small arrow next to 'Labels'")
+
+            return diagnosis
+
+        except HttpError as error:
+            print(f"❌ Error during diagnosis: {error}")
+            diagnosis['error'] = str(error)
+            return diagnosis
+
+    def fix_label_visibility(self) -> Tuple[int, int]:
+        """
+        Fix label visibility issues by ensuring all automation labels are visible.
+        """
+        print("\n🔧 Fixing Label Visibility Issues")
+        print("=" * 50)
+
+        fixed_count = 0
+        failed_count = 0
+
+        # Get existing labels
+        existing_labels = self.get_existing_labels()
+        automation_label_names = [label.name for label in self.labels]
+
+        for label_name in automation_label_names:
+            if label_name in existing_labels:
+                label_id = existing_labels[label_name]
+
+                try:
+                    # Get current label details
+                    current_label = self.service.users().labels().get(userId='me', id=label_id).execute()
+
+                    # Check if visibility needs fixing
+                    needs_fix = False
+                    update_body = {}
+
+                    if current_label.get('labelListVisibility') != 'labelShow':
+                        update_body['labelListVisibility'] = 'labelShow'
+                        needs_fix = True
+
+                    if current_label.get('messageListVisibility') != 'show':
+                        update_body['messageListVisibility'] = 'show'
+                        needs_fix = True
+
+                    if needs_fix:
+                        # Update label visibility
+                        self.service.users().labels().patch(
+                            userId='me',
+                            id=label_id,
+                            body=update_body
+                        ).execute()
+
+                        print(f"   ✅ Fixed visibility for: {label_name}")
+                        fixed_count += 1
+                    else:
+                        print(f"   ✓ Already visible: {label_name}")
+
+                except HttpError as error:
+                    print(f"   ❌ Failed to fix {label_name}: {error}")
+                    failed_count += 1
+
+        print(f"\n📊 Visibility Fix Summary:")
+        print(f"   ✅ Fixed: {fixed_count}")
+        print(f"   ❌ Failed: {failed_count}")
+
+        return fixed_count, failed_count
+
     def load_categories_config(self) -> Dict:
         """Load email categorization configuration from JSON file"""
         config_file = os.path.join(os.path.dirname(__file__), 'email_categories.json')
@@ -691,12 +880,33 @@ class GmailAutomation:
 
     def categorize_email(self, email_data: Dict) -> Optional[str]:
         """
-        Advanced email categorization using data dictionary and confidence scoring.
+        Advanced email categorization using hybrid ML + rule-based approach.
         Returns the highest confidence category or None if below threshold.
+        """
+        # Use ML categorizer if available
+        if self.use_ml and self.ml_categorizer:
+            # Get rule-based prediction first
+            rule_based_category = self._categorize_email_rule_based(email_data)
+            rule_based_confidence = self._get_rule_based_confidence(email_data, rule_based_category)
+
+            # Get hybrid prediction
+            result = self.ml_categorizer.hybrid_categorize(
+                email_data,
+                rule_based_result=(rule_based_category, rule_based_confidence) if rule_based_category else None
+            )
+
+            return result.get('final_category')
+        else:
+            # Fallback to rule-based categorization
+            return self._categorize_email_rule_based(email_data)
+
+    def _categorize_email_rule_based(self, email_data: Dict) -> Optional[str]:
+        """
+        Original rule-based email categorization method.
         """
         categories = self.categories_config.get('categories', {})
         global_settings = self.categories_config.get('global_settings', {})
-        confidence_threshold = global_settings.get('confidence_threshold', 0.6)
+        confidence_threshold = global_settings.get('confidence_threshold', 0.4)
 
         # Calculate scores for all categories
         category_scores = {}
@@ -715,40 +925,71 @@ class GmailAutomation:
 
         return None
 
+    def _get_rule_based_confidence(self, email_data: Dict, category: str) -> float:
+        """
+        Get confidence score for rule-based categorization.
+        """
+        if not category:
+            return 0.0
+
+        categories = self.categories_config.get('categories', {})
+        if category in categories:
+            return self.calculate_category_score(email_data, category, categories[category])
+        return 0.0
+
     def categorize_email_debug(self, email_data: Dict) -> Dict:
         """
-        Debug version that returns detailed scoring information.
+        Debug version that returns detailed scoring information including ML predictions.
         Useful for understanding why emails are categorized a certain way.
         """
+        # Get rule-based scores
         categories = self.categories_config.get('categories', {})
         global_settings = self.categories_config.get('global_settings', {})
-        confidence_threshold = global_settings.get('confidence_threshold', 0.6)
+        confidence_threshold = global_settings.get('confidence_threshold', 0.4)
 
-        # Calculate scores for all categories
         category_scores = {}
         for category_name, category_config in categories.items():
             score = self.calculate_category_score(email_data, category_name, category_config)
             category_scores[category_name] = round(score, 3)
 
-        # Determine best category
-        best_category = None
-        best_score = 0
+        # Determine rule-based best category
+        rule_best_category = None
+        rule_best_score = 0
         if category_scores:
-            best_category = max(category_scores, key=category_scores.get)
-            best_score = category_scores[best_category]
+            rule_best_category = max(category_scores, key=category_scores.get)
+            rule_best_score = category_scores[rule_best_category]
 
-        return {
+        debug_info = {
             'email': {
                 'sender': email_data.get('sender', '')[:50],
                 'subject': email_data.get('subject', '')[:60],
                 'snippet': email_data.get('snippet', '')[:80] + '...'
             },
-            'scores': dict(sorted(category_scores.items(), key=lambda x: x[1], reverse=True)),
-            'best_category': best_category if best_score >= confidence_threshold else None,
-            'confidence': best_score,
-            'threshold': confidence_threshold,
-            'passed_threshold': best_score >= confidence_threshold
+            'rule_based': {
+                'scores': dict(sorted(category_scores.items(), key=lambda x: x[1], reverse=True)),
+                'best_category': rule_best_category if rule_best_score >= confidence_threshold else None,
+                'confidence': rule_best_score
+            }
         }
+
+        # Add ML predictions if available
+        if self.use_ml and self.ml_categorizer:
+            try:
+                rule_based_result = (rule_best_category, rule_best_score) if rule_best_category else None
+                ml_result = self.ml_categorizer.hybrid_categorize(email_data, rule_based_result)
+
+                debug_info['ml_prediction'] = ml_result
+                debug_info['final_category'] = ml_result.get('final_category')
+                debug_info['final_confidence'] = ml_result.get('final_confidence')
+                debug_info['method_used'] = ml_result.get('method_used')
+            except Exception as e:
+                debug_info['ml_error'] = str(e)
+        else:
+            debug_info['final_category'] = debug_info['rule_based']['best_category']
+            debug_info['final_confidence'] = debug_info['rule_based']['confidence']
+            debug_info['method_used'] = 'rule_based_only'
+
+        return debug_info
 
     def scan_and_label_emails(self, max_emails: int = 1000, days_back: int = 30, debug: bool = False) -> Dict[str, int]:
         """
@@ -841,14 +1082,17 @@ class GmailAutomation:
                         # Categorize email (with debug info if requested)
                         if debug:
                             debug_info = self.categorize_email_debug(email_data)
-                            suggested_label = debug_info['best_category']
+                            suggested_label = debug_info['final_category']
 
                             # Show debug info for first few emails in batch
                             if len([x for x in batch_ids if batch_ids.index(x) <= batch_ids.index(msg_id)]) <= 2:
                                 print(f"    🔍 DEBUG: {debug_info['email']['sender'][:30]}")
                                 print(f"       Subject: {debug_info['email']['subject']}")
-                                print(f"       Scores: {debug_info['scores']}")
-                                print(f"       Result: {suggested_label} (confidence: {debug_info['confidence']:.2f})")
+                                print(f"       Rule-based scores: {debug_info['rule_based']['scores']}")
+                                if 'ml_prediction' in debug_info:
+                                    print(f"       ML method: {debug_info.get('method_used', 'unknown')}")
+                                    print(f"       ML confidence: {debug_info.get('final_confidence', 0):.2f}")
+                                print(f"       Final result: {suggested_label}")
                         else:
                             suggested_label = self.categorize_email(email_data)
 
@@ -1011,11 +1255,27 @@ def main():
                        help='Complete reset - remove all automation changes (requires RESET confirmation)')
     parser.add_argument('--force', action='store_true',
                        help='Skip confirmation prompts for cleanup/reset operations')
+    parser.add_argument('--diagnose', action='store_true',
+                       help='Diagnose label visibility issues in Gmail web interface')
+    parser.add_argument('--fix-visibility', action='store_true',
+                       help='Fix label visibility settings to ensure labels appear in Gmail')
+
+    # ML-specific options
+    parser.add_argument('--disable-ml', action='store_true',
+                       help='Disable ML categorization and use only rule-based approach')
+    parser.add_argument('--train-ml', action='store_true',
+                       help='Train ML model using existing labeled emails')
+    parser.add_argument('--ml-info', action='store_true',
+                       help='Show ML model information and statistics')
+    parser.add_argument('--bootstrap-training', action='store_true',
+                       help='Create synthetic training data to bootstrap ML model')
+    parser.add_argument('--add-training-sample', nargs=2, metavar=('EMAIL_ID', 'CATEGORY'),
+                       help='Add a specific email as training data for the given category')
 
     args = parser.parse_args()
 
     # Initialize automation
-    automation = GmailAutomation(args.credentials, args.token)
+    automation = GmailAutomation(args.credentials, args.token, use_ml=not args.disable_ml)
 
     # Validate and authenticate
     if not automation.validate_environment() or not automation.authenticate():
@@ -1029,6 +1289,62 @@ def main():
     if args.cleanup:
         labels_deleted, filters_deleted = automation.cleanup_automation_labels_and_filters(args.force)
         print(f"\nCleanup completed: {labels_deleted} labels and {filters_deleted} filters removed")
+        return 0
+
+    # Handle diagnostic operations
+    if args.diagnose:
+        diagnosis = automation.diagnose_label_visibility()
+        if diagnosis.get('recommendations'):
+            print(f"\n💡 Recommendations:")
+            for rec in diagnosis['recommendations']:
+                print(f"   • {rec}")
+        return 0
+
+    if args.fix_visibility:
+        fixed, failed = automation.fix_label_visibility()
+        print(f"\nVisibility fix completed: {fixed} labels fixed, {failed} failed")
+        return 0 if failed == 0 else 1
+
+    # Handle ML operations
+    if args.ml_info:
+        if automation.use_ml and automation.ml_categorizer:
+            info = automation.ml_categorizer.get_model_info()
+            print("\n🤖 ML Model Information:")
+            print("=" * 50)
+            for key, value in info.items():
+                if key == 'categories':
+                    print(f"   {key}: {len(value)} categories")
+                    for cat in value:
+                        print(f"      • {cat}")
+                else:
+                    print(f"   {key}: {value}")
+        else:
+            print("⚠️ ML categorization is not enabled")
+        return 0
+
+    if args.bootstrap_training:
+        if automation.use_ml and automation.ml_categorizer:
+            print("🔄 Creating synthetic training data...")
+            synthetic_data = create_synthetic_training_data(automation.categories_config)
+            print(f"✅ Generated {len(synthetic_data)} synthetic examples")
+
+            if len(synthetic_data) > 0:
+                print("🔄 Training initial ML model...")
+                report = automation.ml_categorizer.train_classifier(synthetic_data)
+                print(f"✅ Training completed with accuracy: {report['accuracy']:.3f}")
+            else:
+                print("⚠️ No synthetic data could be generated")
+        else:
+            print("⚠️ ML categorization is not enabled")
+        return 0
+
+    if args.train_ml:
+        if automation.use_ml and automation.ml_categorizer:
+            print("🔄 Training ML model from existing labeled emails...")
+            # This would collect training data from already labeled emails
+            print("⚠️ Feature not fully implemented yet. Use --bootstrap-training first.")
+        else:
+            print("⚠️ ML categorization is not enabled")
         return 0
 
     # Handle individual operations

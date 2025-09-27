@@ -54,7 +54,12 @@ Thumbs.db
 # Logs and Reports
 *.log
 *.html
-*.txt
+
+# ML Models and Training Data (but keep requirements.txt)
+models/*.pkl
+models/topic_model*
+training_data.json
+*.model
 
 # Backup Files
 *.bak
@@ -64,3 +69,7 @@ Thumbs.db
 # Personal Data
 unsubscribe_report.html
 migration_report.txt
+
+# Reports and temporary output files
+*_report.txt
+*_report.html

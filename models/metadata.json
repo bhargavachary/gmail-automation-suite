@@ -1,0 +1,15 @@
+{
+  "is_trained": true,
+  "categories": [
+    "\ud83c\udfe6 Banking & Finance",
+    "\ud83d\udcc8 Investments & Trading",
+    "\ud83d\udd14 Alerts & Security",
+    "\ud83d\uded2 Shopping & Orders",
+    "\u2708\ufe0f Travel & Transport",
+    "\ud83c\udfe5 Insurance & Services",
+    "\ud83d\udce6 Receipts & Archive",
+    "\ud83d\udcf0 Marketing & News",
+    "\ud83d\udc64 Personal & Work"
+  ],
+  "training_samples": 0
+}

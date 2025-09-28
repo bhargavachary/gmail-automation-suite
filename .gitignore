@@ -1,7 +1,19 @@
-# Gmail API Credentials and Tokens
+# Gmail API Credentials and Tokens - NEVER COMMIT THESE!
 credentials.json
+credentials*.json
+token.json
 token*.json
 client_secret*.json
+oauth2_credentials.json
+service_account*.json
+*.credentials
+auth.json
+client_credentials.json
+
+# Personal Gmail data - NEVER COMMIT!
+personal_emails.json
+email_data.json
+user_data.json
 
 # Python
 __pycache__/

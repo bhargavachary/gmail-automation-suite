@@ -313,7 +313,7 @@ class GmailAutomationUnified:
         # Use ML categorizer if available and enabled
         if self.use_ml and self.ml_categorizer:
             try:
-                result = self.ml_categorizer.categorize_email_hybrid(email_data)
+                result = self.ml_categorizer.hybrid_categorize(email_data)
                 return result.get('final_category')
             except Exception as e:
                 print(f"⚠️ ML categorization failed, using rule-based: {e}")
@@ -325,7 +325,7 @@ class GmailAutomationUnified:
         """Categorize email with debug information"""
         if self.use_ml and self.ml_categorizer:
             try:
-                return self.ml_categorizer.categorize_email_hybrid(email_data, debug=True)
+                return self.ml_categorizer.hybrid_categorize(email_data)
             except Exception as e:
                 print(f"⚠️ ML categorization failed: {e}")
 
@@ -1034,6 +1034,16 @@ def main():
     parser.add_argument('--bootstrap-training', action='store_true',
                        help='Bootstrap ML model training')
 
+    # Semi-supervised learning options
+    parser.add_argument('--review-clusters', action='store_true',
+                       help='Interactive cluster review for semi-supervised learning')
+    parser.add_argument('--cluster-count', type=int, default=10,
+                       help='Number of clusters for review (default: 10)')
+    parser.add_argument('--review-emails', type=int, default=200,
+                       help='Number of emails to include in clustering review (default: 200)')
+    parser.add_argument('--confidence-threshold', type=float, default=0.8,
+                       help='Max confidence for uncertainty sampling (default: 0.8)')
+
     args = parser.parse_args()
 
     # Initialize automation
@@ -1076,6 +1086,59 @@ def main():
                 print(f"✅ Training completed with accuracy: {report['accuracy']:.3f}")
         else:
             print("⚠️ ML categorization is not enabled")
+        return 0
+
+    # Handle semi-supervised learning review
+    if args.review_clusters:
+        try:
+            from email_clustering_reviewer import EmailClusteringReviewer
+            print("🎯 Starting Semi-Supervised Learning Review Session")
+            print("=" * 60)
+
+            reviewer = EmailClusteringReviewer(gmail_automation=automation)
+
+            # Collect emails for review
+            emails_for_review = reviewer.collect_emails_for_review(
+                max_emails=args.review_emails,
+                max_confidence=args.confidence_threshold
+            )
+
+            if not emails_for_review:
+                print("✅ No emails found that need review at this confidence level")
+                print(f"💡 Try adjusting --confidence-threshold (current: {args.confidence_threshold})")
+                return 0
+
+            # Create clusters
+            clusters = reviewer.create_email_clusters(
+                emails_for_review,
+                n_clusters=min(args.cluster_count, len(emails_for_review) // 5)
+            )
+
+            if not clusters:
+                print("❌ Could not create clusters for review")
+                return 1
+
+            # Start interactive review
+            session = reviewer.start_interactive_review(clusters)
+
+            # Export training data if corrections were made
+            if session.corrections_made > 0:
+                training_file = reviewer.export_training_data(session.session_id)
+                print(f"\n🎉 Semi-supervised learning session completed!")
+                print(f"📊 Training data exported to: {training_file}")
+                print("\n💡 Next steps:")
+                print("1. Review the exported training data")
+                print("2. Use it to retrain your ML model")
+                print("3. Run regular email scanning to test improvements")
+            else:
+                print("\n✅ Review completed - no corrections needed!")
+
+        except ImportError:
+            print("❌ Email clustering reviewer not available")
+            print("💡 Make sure email_clustering_reviewer.py is in the same directory")
+        except Exception as e:
+            print(f"❌ Error during cluster review: {e}")
+
         return 0
 
     # Handle label creation
@@ -1137,6 +1200,9 @@ def main():
     print("   --debug-categorization        Show AI decision process")
     print("   --ml-info                     Show ML model status")
     print("   --bootstrap-training          Train initial ML model")
+    print("   --review-clusters             Interactive cluster review for corrections")
+    print("   --cluster-count N             Number of clusters for review")
+    print("   --confidence-threshold X      Max confidence for uncertainty sampling")
     print("   --help                        Show all options")
 
     return 0

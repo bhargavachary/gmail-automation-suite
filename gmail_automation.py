@@ -1043,6 +1043,10 @@ def main():
                        help='Number of emails to include in clustering review (default: 200)')
     parser.add_argument('--confidence-threshold', type=float, default=0.8,
                        help='Max confidence for uncertainty sampling (default: 0.8)')
+    parser.add_argument('--retrain-from-corrections', type=str,
+                       help='Retrain ML model using corrections from specified JSON file')
+    parser.add_argument('--retrain-latest-corrections', action='store_true',
+                       help='Retrain ML model using latest correction file')
 
     args = parser.parse_args()
 
@@ -1141,6 +1145,100 @@ def main():
 
         return 0
 
+    # Handle retraining from corrections
+    if args.retrain_from_corrections or args.retrain_latest_corrections:
+        if not automation.use_ml or not automation.ml_categorizer:
+            print("❌ ML categorization is not enabled")
+            print("💡 Run without --disable-ml flag to enable ML features")
+            return 1
+
+        try:
+            # Determine which correction file to use
+            correction_file = None
+
+            if args.retrain_from_corrections:
+                correction_file = args.retrain_from_corrections
+                if not os.path.exists(correction_file):
+                    print(f"❌ Correction file not found: {correction_file}")
+                    return 1
+            elif args.retrain_latest_corrections:
+                # Find latest correction file
+                import glob
+                correction_files = glob.glob("corrected_training_data_*.json")
+                if not correction_files:
+                    print("❌ No correction files found")
+                    print("💡 Run --review-clusters first to generate training data")
+                    return 1
+
+                # Get the most recent file
+                correction_file = max(correction_files, key=os.path.getctime)
+                print(f"📁 Using latest correction file: {correction_file}")
+
+            # Load correction data
+            print(f"📂 Loading correction data from {correction_file}...")
+            with open(correction_file, 'r') as f:
+                corrections = json.load(f)
+
+            if not corrections:
+                print("❌ No corrections found in file")
+                return 1
+
+            print(f"✅ Loaded {len(corrections)} corrected training examples")
+
+            # Convert corrections to training format
+            training_data = []
+            for correction in corrections:
+                training_example = {
+                    'text': correction['text'],
+                    'category': correction['category'],
+                    'sender': correction['sender'],
+                    'subject': correction['text'].split()[0] if correction['text'] else '',
+                    'snippet': correction['text']
+                }
+                training_data.append(training_example)
+
+            # Add existing synthetic data to supplement
+            print("🔄 Adding synthetic training data to supplement corrections...")
+            synthetic_data = create_synthetic_training_data(automation.categories_config)
+            training_data.extend(synthetic_data)
+
+            print(f"📊 Total training data: {len(training_data)} examples")
+            print(f"   📝 Your corrections: {len(corrections)}")
+            print(f"   🤖 Synthetic data: {len(synthetic_data)}")
+
+            # Retrain the model
+            print("\n🔄 Retraining ML model with your corrections...")
+            print("⏳ This may take a few minutes...")
+
+            report = automation.ml_categorizer.train_classifier(training_data)
+
+            print("\n🎉 Model retraining completed!")
+            print("=" * 50)
+            print(f"📊 Training accuracy: {report['accuracy']:.3f}")
+            print(f"📈 Total samples: {len(training_data)}")
+            print(f"✏️ Your corrections: {len(corrections)}")
+
+            if 'classification_report' in report:
+                print("\n📋 Detailed Performance Report:")
+                print(report['classification_report'])
+
+            # Save the improved model
+            automation.ml_categorizer.save_models()
+            print("\n💾 Improved model saved successfully!")
+
+            print("\n💡 Next steps:")
+            print("1. Test the improved model: python gmail_automation.py --scan-unlabeled --debug-categorization")
+            print("2. Run another review session to see if fewer corrections are needed")
+            print("3. Continue the improvement cycle for even better accuracy")
+
+        except Exception as e:
+            print(f"❌ Error during retraining: {e}")
+            import traceback
+            traceback.print_exc()
+            return 1
+
+        return 0
+
     # Handle label creation
     if args.labels_only:
         automation.create_labels()
@@ -1201,6 +1299,8 @@ def main():
     print("   --ml-info                     Show ML model status")
     print("   --bootstrap-training          Train initial ML model")
     print("   --review-clusters             Interactive cluster review for corrections")
+    print("   --retrain-latest-corrections  Retrain ML model with latest corrections")
+    print("   --retrain-from-corrections F  Retrain ML model with specific correction file")
     print("   --cluster-count N             Number of clusters for review")
     print("   --confidence-threshold X      Max confidence for uncertainty sampling")
     print("   --help                        Show all options")

@@ -1,6 +1,6 @@
-# Gmail Automation Suite v4.0 - ML Enhanced
+# Gmail Automation Suite v5.0 - Unified Edition
 
-🚀 An advanced, AI-powered tool for Gmail management that combines machine learning with rule-based categorization for superior email organization. Features deep learning models, topic modeling, and hybrid classification systems.
+🚀 A comprehensive, AI-powered Gmail management solution with multithreading capabilities. Single unified script combining machine learning, rule-based categorization, and concurrent processing for maximum performance and ease of use.
 
 ## ✨ Features
 
@@ -18,6 +18,13 @@
 - 🧠 **Data Dictionary-Based Categorization**: Advanced scoring system using comprehensive domain and keyword dictionaries
 - 🤖 **Intelligent Email Scanning**: Automatically scan and label existing emails with AI-powered classification
 - 📧 **Email Migration**: Batch migrate emails between labels with rate limiting
+
+### ⚡ **Performance & Concurrency**
+- 🚀 **Multithreaded Processing**: Concurrent email processing for maximum speed
+- 🎯 **Incremental Labeling**: Only process unlabeled emails for maintenance
+- 📊 **Real-time Progress**: Live statistics and progress tracking
+- 🔄 **Producer-Consumer Architecture**: Instant processing as emails are found
+- ⚙️ **Configurable Workers**: Control number of concurrent threads
 - 🗑️ **Label Management**: Delete old labels and consolidate email organization
 - 🧹 **Filter Cleanup**: Clear existing filters for fresh setup
 - 📊 **Promotional Email Scanning**: Identifies and manages promotional emails
@@ -61,35 +68,28 @@ python gmail_automation.py --labels-only
 # Filters only (with importance marking and auto-archive)
 python gmail_automation.py --filters-only
 
-# 🔥 NEW: Scan and auto-label existing emails
-python gmail_automation.py --scan-emails                    # Scan last 30 days, max 1000 emails
+# 📧 Email Scanning Operations
+python gmail_automation.py --scan-emails                    # Scan all emails (last 30 days, max 1000)
 python gmail_automation.py --scan-emails --max-emails 500   # Limit to 500 emails
 python gmail_automation.py --scan-emails --days-back 7      # Only last 7 days
-python gmail_automation.py --scan-emails --days-back 0      # Scan ALL emails (use with caution)
+python gmail_automation.py --scan-emails --days-back 0      # Scan ALL emails (unlimited)
 
-# Advanced operations
-python gmail_automation.py --scan-promos                    # Scan promotional emails
-python gmail_automation.py --migrate-labels "Old Label" "New Label"  # Migrate emails
-python gmail_automation.py --delete-labels "Label1" "Label2"         # Delete labels
-python gmail_automation.py --clear-filters                           # Clear all filters
+# 🎯 Incremental Labeling (Only Unlabeled Emails)
+python gmail_automation.py --scan-unlabeled                 # Only label unlabeled emails (faster!)
+python gmail_automation.py --scan-all-unlabeled             # Scan ALL unlabeled emails (unlimited)
+python gmail_automation.py --scan-unlabeled --days-back 1   # Daily maintenance mode
+python gmail_automation.py --scan-unlabeled --max-emails 0  # Unlimited processing
 
-# 🧹 Cleanup & Reset Operations
-python gmail_automation.py --cleanup                        # Remove all automation (with confirmation)
-python gmail_automation.py --reset                          # Complete reset (requires typing 'RESET')
-python gmail_automation.py --cleanup --force                # Skip confirmations (dangerous!)
+# ⚡ Concurrent Processing (High Performance)
+python gmail_automation.py --scan-emails --concurrent                    # Use multithreading
+python gmail_automation.py --scan-unlabeled --concurrent --max-workers 8 # 8 concurrent threads
+python gmail_automation.py --scan-all-unlabeled --concurrent             # Unlimited + concurrent
 
 # 🤖 AI/ML Operations
 python gmail_automation.py --ml-info                        # Show ML model status
-python gmail_automation.py --bootstrap-training             # Create synthetic training data & train initial model
+python gmail_automation.py --bootstrap-training             # Create synthetic training data & train model
 python gmail_automation.py --disable-ml                     # Use only rule-based categorization
 python gmail_automation.py --scan-emails --debug-categorization  # Show AI decision process
-
-# ⚡ NEW: Incremental Labeling (Extended Version)
-python gmail_automation_extended.py --scan-unlabeled        # Only label unlabeled emails (10x faster!)
-python gmail_automation_extended.py --scan-all-unlabeled    # Scan ALL unlabeled emails (unlimited)
-python gmail_automation_extended.py --exhaustive-scan       # Complete inbox scan (use with caution)
-python gmail_automation_extended.py --scan-unlabeled --days-back 1  # Daily maintenance mode
-python gmail_automation_extended.py --scan-unlabeled --max-emails 0  # Unlimited processing
 ```
 
 ## Labels Created
@@ -133,13 +133,16 @@ The automation creates intelligent filters with advanced capabilities:
 
 ```
 gmail_api_automation/
-├── gmail_automation.py     # Main automation script
-├── email_categories.json   # Categorization rules and scoring weights
-├── requirements.txt        # Python dependencies
-├── credentials.json        # OAuth credentials (you provide)
-├── token.json             # Auto-generated after first run
-├── backup/                # Old scripts (moved here)
-└── README.md              # This file
+├── gmail_automation.py        # 🚀 Unified automation script (v5.0)
+├── email_ml_categorizer.py    # 🤖 ML categorization engine
+├── email_categories.json      # 📋 Categorization rules and scoring weights
+├── requirements.txt           # 📦 Python dependencies
+├── credentials.json           # 🔑 OAuth credentials (you provide)
+├── token.json                # 🎫 Auto-generated after first run
+├── processing_state.json     # 📊 State tracking for incremental processing
+├── backup_old_scripts/       # 📁 Previous script versions (archived)
+├── INCREMENTAL_USAGE.md      # 📖 Detailed usage guide
+└── README.md                # 📋 This file
 ```
 
 ## 🛠️ Command Line Options
@@ -262,23 +265,26 @@ python gmail_automation.py --cleanup --force
 python gmail_automation.py --reset --force
 ```
 
-## ⚡ Extended Version - Incremental Labeling
+## ⚡ Performance & Best Practices
 
-For **periodic maintenance** and **faster processing**, use the extended version:
+The unified script includes all performance optimizations and features:
 
-**`gmail_automation_extended.py`** - Features:
+### **Incremental Processing**
 - 🎯 **Smart Unlabeled Detection** - Only processes emails without automation labels
-- ⚡ **10x Faster** - Skips already-labeled emails
+- ⚡ **10x Faster** - Skips already-labeled emails for maintenance scans
 - 📊 **Progress Tracking** - State persistence across sessions
 - 🔄 **Resume Capability** - Continue interrupted scans
-- 📈 **Efficiency Reports** - Detailed statistics
 
-**Perfect for:**
-- Daily maintenance: `--scan-unlabeled --days-back 1`
-- Weekly cleanup: `--scan-unlabeled --days-back 7`
-- Complete audit: `--scan-all-unlabeled`
+### **Concurrent Processing**
+- 🚀 **Multithreading** - Process multiple emails simultaneously
+- ⚙️ **Configurable Workers** - Control number of threads with `--max-workers`
+- 📈 **Scalable Performance** - Better utilization of system resources
 
-See [`INCREMENTAL_USAGE.md`](INCREMENTAL_USAGE.md) for detailed usage guide.
+### **Perfect for:**
+- **Daily maintenance**: `--scan-unlabeled --days-back 1 --concurrent`
+- **Weekly cleanup**: `--scan-unlabeled --days-back 7 --concurrent`
+- **Complete audit**: `--scan-all-unlabeled --concurrent --max-workers 8`
+- **High performance**: `--scan-emails --concurrent --max-emails 0`
 
 ## Security & Privacy
 

@@ -20,8 +20,11 @@ import json
 import argparse
 import warnings
 import datetime
+import threading
+import queue
 from typing import Dict, List, Optional, Tuple, Set
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -468,6 +471,167 @@ class GmailAutomationExtended:
         print(f"\nIncremental email labeling completed: {stats['labeled']} emails labeled")
         return stats
 
+    def process_email_batch_concurrent(self, batch_emails: List[Dict], existing_labels: Dict,
+                                     debug: bool, max_workers: int = 4) -> Dict:
+        """Process a batch of emails using concurrent processing"""
+        if not batch_emails:
+            return {'processed': 0, 'labeled': 0, 'skipped': 0, 'errors': 0, 'categories': {}}
+
+        stats = {
+            'processed': 0,
+            'labeled': 0,
+            'skipped': 0,
+            'errors': 0,
+            'categories': {}
+        }
+
+        # Use ThreadPoolExecutor for concurrent processing within the batch
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all emails for processing
+            future_to_email = {
+                executor.submit(self._process_single_email, email, existing_labels, debug): email
+                for email in batch_emails
+            }
+
+            # Collect results as they complete
+            for future in as_completed(future_to_email):
+                email = future_to_email[future]
+                try:
+                    email_stats = future.result()
+
+                    # Merge email stats
+                    for key in ['processed', 'labeled', 'skipped', 'errors']:
+                        stats[key] += email_stats.get(key, 0)
+
+                    for category, count in email_stats.get('categories', {}).items():
+                        stats['categories'][category] = stats['categories'].get(category, 0) + count
+
+                except Exception as e:
+                    print(f"⚠️ Error processing email {email.get('id', 'unknown')}: {e}")
+                    stats['errors'] += 1
+
+        return stats
+
+    def scan_and_label_unlabeled_emails_concurrent(self, max_emails: int = 1000, days_back: int = 30,
+                                                 debug: bool = False, only_unlabeled: bool = True,
+                                                 resume_from_id: str = None, max_workers: int = 4) -> Dict[str, int]:
+        """
+        Scan and label unlabeled emails using concurrent processing
+
+        Args:
+            max_emails: Maximum emails to process
+            days_back: How many days back to scan (0 = all)
+            debug: Show debug information
+            only_unlabeled: Only process emails without automation labels
+            resume_from_id: Resume processing from specific email ID
+            max_workers: Maximum number of worker threads
+
+        Returns:
+            Statistics dictionary
+        """
+        print("📧 Scanning and labeling unlabeled emails with concurrent processing...")
+        print(f"📊 Parameters: max_emails={max_emails}, days_back={days_back}, only_unlabeled={only_unlabeled}, workers={max_workers}")
+        print("-" * 60)
+
+        # Configure incremental scan
+        config = IncrementalScanConfig(
+            only_unlabeled=only_unlabeled,
+            exclude_system_labels=True,
+            min_date=self._get_date_string(days_back) if days_back > 0 else None,
+            resume_from_id=resume_from_id
+        )
+
+        # Get existing labels
+        existing_labels = self.get_existing_labels()
+        if not existing_labels:
+            print("❌ No labels found. Please create labels first.")
+            return {'error': 'No labels found'}
+
+        print(f"📋 Found {len(existing_labels)} existing labels")
+
+        # Get unlabeled emails
+        if only_unlabeled:
+            emails_to_process = self.get_unlabeled_emails(config, max_emails)
+        else:
+            # Fallback to original method if not using incremental
+            emails_to_process = self._get_all_emails(max_emails, days_back)
+
+        if not emails_to_process:
+            print("✅ No unlabeled emails found - your inbox is fully organized!")
+            return {'processed': 0, 'labeled': 0, 'skipped': 0, 'errors': 0}
+
+        print(f"📬 Processing {len(emails_to_process)} emails with {max_workers} concurrent workers...")
+
+        # Process emails in batches using concurrent processing
+        stats = {
+            'processed': 0,
+            'labeled': 0,
+            'skipped': 0,
+            'errors': 0,
+            'categories': {}
+        }
+
+        batch_size = 50
+        total_batches = (len(emails_to_process) + batch_size - 1) // batch_size
+
+        for batch_num in range(total_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, len(emails_to_process))
+            batch_emails = emails_to_process[start_idx:end_idx]
+
+            print(f"\n🔄 Processing batch {batch_num + 1}/{total_batches} ({len(batch_emails)} emails) concurrently")
+
+            # Use concurrent processing for this batch
+            batch_stats = self.process_email_batch_concurrent(batch_emails, existing_labels, debug, max_workers)
+
+            # Merge batch stats
+            for key in ['processed', 'labeled', 'skipped', 'errors']:
+                stats[key] += batch_stats.get(key, 0)
+
+            for category, count in batch_stats.get('categories', {}).items():
+                stats['categories'][category] = stats['categories'].get(category, 0) + count
+
+            # Progress update
+            progress = ((batch_num + 1) / total_batches) * 100
+            print(f"📈 Progress: {progress:.1f}% complete")
+
+            # Rate limiting between batches (shorter delay for concurrent processing)
+            if batch_num < total_batches - 1:
+                time.sleep(0.5)
+
+        # Save processing state
+        self.processing_state.update({
+            'last_scan_time': datetime.datetime.now().isoformat(),
+            'last_processed_id': emails_to_process[-1]['id'] if emails_to_process else None,
+            'total_processed': self.processing_state['total_processed'] + stats['processed']
+        })
+
+        self._save_processing_state()
+
+        # Print summary
+        print("\n" + "=" * 60)
+        print("📊 CONCURRENT INCREMENTAL EMAIL LABELING SUMMARY")
+        print("=" * 60)
+        print(f"📧 Total processed: {stats['processed']}")
+        print(f"✅ Successfully labeled: {stats['labeled']}")
+        print(f"⏭️  Skipped (already labeled/no category): {stats['skipped']}")
+        print(f"❌ Errors: {stats['errors']}")
+        print(f"⚡ Workers used: {max_workers}")
+
+        if stats['categories']:
+            print(f"\n📋 Categories applied:")
+            for category, count in sorted(stats['categories'].items(), key=lambda x: x[1], reverse=True):
+                print(f"   • {category}: {count} emails")
+
+        success_rate = (stats['labeled'] / stats['processed'] * 100) if stats['processed'] > 0 else 0
+        print(f"\n📈 Success rate: {success_rate:.1f}%")
+
+        if only_unlabeled:
+            print("🎯 Incremental mode: Only processed unlabeled emails")
+
+        print(f"\nConcurrent incremental email labeling completed: {stats['labeled']} emails labeled")
+        return stats
+
     def _get_date_string(self, days_back: int) -> str:
         """Get date string for Gmail search query"""
         if days_back <= 0:
@@ -575,6 +739,71 @@ class GmailAutomationExtended:
                 batch_stats['errors'] += 1
 
         return batch_stats
+
+    def _process_single_email(self, email: Dict, existing_labels: Dict, debug: bool) -> Dict:
+        """Process a single email (for concurrent processing)"""
+        email_stats = {'processed': 0, 'labeled': 0, 'skipped': 0, 'errors': 0, 'categories': {}}
+
+        try:
+            msg_id = email['id']
+
+            # Extract email data for categorization
+            headers = {h['name'].lower(): h['value'] for h in email.get('payload', {}).get('headers', [])}
+            email_data = {
+                'sender': headers.get('from', ''),
+                'subject': headers.get('subject', ''),
+                'snippet': email.get('snippet', '')
+            }
+
+            # Categorize email
+            if debug:  # Show debug for emails when requested
+                debug_info = self.categorize_email_debug(email_data)
+                suggested_label = debug_info['final_category']
+
+                print(f"    🔍 DEBUG: {debug_info['email']['sender'][:30]}")
+                print(f"       Subject: {debug_info['email']['subject']}")
+                print(f"       Rule-based scores: {debug_info['rule_based']['scores']}")
+                if 'ml_prediction' in debug_info:
+                    print(f"       ML method: {debug_info.get('method_used', 'unknown')}")
+                    print(f"       ML confidence: {debug_info.get('final_confidence', 0):.2f}")
+                print(f"       Final result: {suggested_label}")
+            else:
+                suggested_label = self.categorize_email(email_data)
+
+            email_stats['processed'] += 1
+
+            if suggested_label and suggested_label in existing_labels:
+                # Check if email already has this label
+                current_labels = email.get('labelIds', [])
+                target_label_id = existing_labels[suggested_label]
+
+                if target_label_id not in current_labels:
+                    # Apply the label
+                    self.service.users().messages().modify(
+                        userId='me',
+                        id=msg_id,
+                        body={'addLabelIds': [target_label_id]}
+                    ).execute()
+
+                    email_stats['labeled'] += 1
+                    email_stats['categories'][suggested_label] = email_stats['categories'].get(suggested_label, 0) + 1
+
+                    sender_short = email_data['sender'].split('@')[0] if '@' in email_data['sender'] else email_data['sender'][:30]
+                    subject_short = email_data['subject'][:40] + "..." if len(email_data['subject']) > 40 else email_data['subject']
+                    print(f"    ✅ {sender_short[:20]}: {subject_short} → {suggested_label}")
+                else:
+                    email_stats['skipped'] += 1
+            else:
+                email_stats['skipped'] += 1
+
+            # Brief rate limiting for API respect
+            time.sleep(0.05)
+
+        except Exception as e:
+            print(f"    ❌ Error processing email {email.get('id', 'unknown')}: {e}")
+            email_stats['errors'] += 1
+
+        return email_stats
 
     def _save_processing_state(self):
         """Save processing state to file"""
@@ -741,6 +970,12 @@ def main():
     parser.add_argument('--debug-categorization', action='store_true',
                        help='Show detailed categorization info')
 
+    # Concurrent processing options
+    parser.add_argument('--concurrent', action='store_true',
+                       help='Use concurrent processing for improved performance')
+    parser.add_argument('--max-workers', type=int, default=4,
+                       help='Maximum number of worker threads (default: 4)')
+
     # ML options
     parser.add_argument('--disable-ml', action='store_true',
                        help='Disable ML categorization')
@@ -812,13 +1047,25 @@ def main():
         if args.max_emails == 0:
             max_emails = 0
 
-        stats = automation.scan_and_label_unlabeled_emails(
-            max_emails=max_emails,
-            days_back=days_back,
-            debug=args.debug_categorization,
-            only_unlabeled=True,
-            resume_from_id=args.resume_from
-        )
+        # Choose between concurrent and sequential processing
+        if args.concurrent:
+            print("🚀 Using concurrent processing for improved performance...")
+            stats = automation.scan_and_label_unlabeled_emails_concurrent(
+                max_emails=max_emails,
+                days_back=days_back,
+                debug=args.debug_categorization,
+                only_unlabeled=True,
+                resume_from_id=args.resume_from,
+                max_workers=args.max_workers
+            )
+        else:
+            stats = automation.scan_and_label_unlabeled_emails(
+                max_emails=max_emails,
+                days_back=days_back,
+                debug=args.debug_categorization,
+                only_unlabeled=True,
+                resume_from_id=args.resume_from
+            )
         return 0 if stats.get('errors', 0) == 0 else 1
 
     # Default behavior
@@ -827,6 +1074,8 @@ def main():
     print("💡 Use --scan-all-unlabeled for complete unlimited scan of all unlabeled emails")
     print("💡 Use --exhaustive-scan for complete inbox scan (use with caution)")
     print("💡 Use --max-emails 0 for unlimited email processing")
+    print("⚡ Use --concurrent for multithreaded processing (faster performance)")
+    print("⚡ Use --max-workers N to control number of concurrent threads")
     print("💡 Use --help for all available options")
 
     return 0

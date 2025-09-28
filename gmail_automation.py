@@ -1185,15 +1185,20 @@ def main():
 
             print(f"✅ Loaded {len(corrections)} corrected training examples")
 
-            # Convert corrections to training format
+            # Convert corrections to training format expected by ML categorizer
             training_data = []
             for correction in corrections:
+                # Extract subject from the text (first part before the main content)
+                text_parts = correction['text'].split(' ', 10)
+                subject = ' '.join(text_parts[:5]) if len(text_parts) >= 5 else correction['text']
+
                 training_example = {
-                    'text': correction['text'],
-                    'category': correction['category'],
-                    'sender': correction['sender'],
-                    'subject': correction['text'].split()[0] if correction['text'] else '',
-                    'snippet': correction['text']
+                    'email_data': {
+                        'sender': correction['sender'],
+                        'subject': subject,
+                        'snippet': correction['text']
+                    },
+                    'category': correction['category']
                 }
                 training_data.append(training_example)
 

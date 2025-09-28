@@ -1047,6 +1047,10 @@ def main():
                        help='Retrain ML model using corrections from specified JSON file')
     parser.add_argument('--retrain-latest-corrections', action='store_true',
                        help='Retrain ML model using latest correction file')
+    parser.add_argument('--export-training-text', action='store_true',
+                       help='Export training data to editable text format')
+    parser.add_argument('--import-training-text', type=str,
+                       help='Import training data from text file and retrain model')
 
     args = parser.parse_args()
 
@@ -1244,6 +1248,243 @@ def main():
 
         return 0
 
+    # Handle export training data to text format
+    if args.export_training_text:
+        try:
+            # Find all correction files
+            import glob
+            correction_files = glob.glob("corrected_training_data_*.json")
+
+            if not correction_files:
+                print("❌ No correction files found")
+                print("💡 Run --review-clusters first to generate training data")
+                return 1
+
+            # Combine all corrections
+            all_corrections = []
+            for file in correction_files:
+                print(f"📂 Loading {file}...")
+                with open(file, 'r') as f:
+                    corrections = json.load(f)
+                    all_corrections.extend(corrections)
+
+            # Add synthetic data
+            print("🔄 Adding synthetic training data...")
+            synthetic_data = create_synthetic_training_data(automation.categories_config)
+
+            # Convert synthetic data to correction format
+            for item in synthetic_data:
+                email_data = item['email_data']
+                correction = {
+                    'text': f"{email_data['subject']} {email_data['snippet']}",
+                    'category': item['category'],
+                    'sender': email_data['sender'],
+                    'metadata': {
+                        'source': 'synthetic',
+                        'timestamp': datetime.datetime.now().isoformat()
+                    }
+                }
+                all_corrections.append(correction)
+
+            # Export to text format
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"training_data_editable_{timestamp}.txt"
+
+            print(f"📝 Exporting {len(all_corrections)} training examples to {filename}...")
+
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write("# Gmail Automation Training Data - Editable Format\n")
+                f.write("# Edit this file to add, remove, or modify training examples\n")
+                f.write("# Format: CATEGORY: email_text | sender_email\n")
+                f.write("# Available categories:\n")
+                f.write("#   🏦 Banking & Finance\n")
+                f.write("#   📈 Investments & Trading\n")
+                f.write("#   🔔 Alerts & Security\n")
+                f.write("#   🛒 Shopping & Orders\n")
+                f.write("#   👤 Personal & Work\n")
+                f.write("#   📰 Marketing & News\n")
+                f.write("#   🎯 Action Required\n")
+                f.write("#   📦 Receipts & Archive\n")
+                f.write("#   🏥 Insurance & Services\n")
+                f.write("#   ✈️ Travel & Transport\n")
+                f.write("#\n")
+                f.write("# Lines starting with # are comments and will be ignored\n")
+                f.write("# Empty lines will be ignored\n")
+                f.write("# To retrain: python gmail_automation.py --import-training-text this_file.txt\n")
+                f.write("\n" + "="*80 + "\n\n")
+
+                # Group by category for better organization
+                from collections import defaultdict
+                by_category = defaultdict(list)
+
+                for correction in all_corrections:
+                    category = correction['category']
+                    text = correction['text'].replace('\n', ' ').replace('\r', ' ').strip()
+                    sender = correction['sender']
+                    source = correction.get('metadata', {}).get('source', 'human')
+
+                    by_category[category].append({
+                        'text': text,
+                        'sender': sender,
+                        'source': source
+                    })
+
+                # Write organized by category
+                for category in sorted(by_category.keys()):
+                    f.write(f"\n# ===== {category} =====\n")
+                    f.write(f"# {len(by_category[category])} examples\n\n")
+
+                    for item in by_category[category]:
+                        # Truncate very long text
+                        text = item['text']
+                        if len(text) > 200:
+                            text = text[:197] + "..."
+
+                        source_marker = " # [synthetic]" if item['source'] == 'synthetic' else ""
+                        f.write(f"{category}: {text} | {item['sender']}{source_marker}\n")
+
+            print(f"✅ Training data exported to {filename}")
+            print(f"📊 Total examples: {len(all_corrections)}")
+            print(f"   📝 Human corrections: {len([c for c in all_corrections if c.get('metadata', {}).get('source') != 'synthetic'])}")
+            print(f"   🤖 Synthetic examples: {len([c for c in all_corrections if c.get('metadata', {}).get('source') == 'synthetic'])}")
+            print("\n💡 Next steps:")
+            print("1. Edit the text file to add/remove/modify examples")
+            print("2. Add your own training examples in the same format")
+            print(f"3. Retrain: python gmail_automation.py --import-training-text {filename}")
+
+        except Exception as e:
+            print(f"❌ Error exporting training data: {e}")
+            import traceback
+            traceback.print_exc()
+            return 1
+
+        return 0
+
+    # Handle import training data from text format
+    if args.import_training_text:
+        if not automation.use_ml or not automation.ml_categorizer:
+            print("❌ ML categorization is not enabled")
+            print("💡 Run without --disable-ml flag to enable ML features")
+            return 1
+
+        if not os.path.exists(args.import_training_text):
+            print(f"❌ Training text file not found: {args.import_training_text}")
+            return 1
+
+        try:
+            print(f"📂 Loading training data from {args.import_training_text}...")
+
+            training_data = []
+            line_count = 0
+            valid_lines = 0
+
+            # Available categories for validation
+            valid_categories = [
+                "🏦 Banking & Finance",
+                "📈 Investments & Trading",
+                "🔔 Alerts & Security",
+                "🛒 Shopping & Orders",
+                "👤 Personal & Work",
+                "📰 Marketing & News",
+                "🎯 Action Required",
+                "📦 Receipts & Archive",
+                "🏥 Insurance & Services",
+                "✈️ Travel & Transport"
+            ]
+
+            with open(args.import_training_text, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line_count += 1
+                    line = line.strip()
+
+                    # Skip comments and empty lines
+                    if not line or line.startswith('#') or line.startswith('='):
+                        continue
+
+                    # Parse format: CATEGORY: text | sender
+                    if ':' not in line or '|' not in line:
+                        print(f"⚠️ Skipping invalid format on line {line_count}: {line[:50]}...")
+                        continue
+
+                    try:
+                        category_part, sender_part = line.split('|', 1)
+                        category, text = category_part.split(':', 1)
+
+                        category = category.strip()
+                        text = text.strip()
+                        sender = sender_part.split('#')[0].strip()  # Remove comments after |
+
+                        # Validate category
+                        if category not in valid_categories:
+                            print(f"⚠️ Skipping invalid category on line {line_count}: {category}")
+                            continue
+
+                        # Create training example
+                        # Extract a reasonable subject from the beginning of text
+                        text_words = text.split()
+                        subject = ' '.join(text_words[:8]) if len(text_words) >= 8 else text
+
+                        training_example = {
+                            'email_data': {
+                                'sender': sender,
+                                'subject': subject,
+                                'snippet': text
+                            },
+                            'category': category
+                        }
+                        training_data.append(training_example)
+                        valid_lines += 1
+
+                    except Exception as e:
+                        print(f"⚠️ Error parsing line {line_count}: {e}")
+                        continue
+
+            if not training_data:
+                print("❌ No valid training data found in file")
+                print("💡 Check file format: CATEGORY: text | sender")
+                return 1
+
+            print(f"✅ Loaded {valid_lines} training examples from {line_count} lines")
+
+            # Show category distribution
+            from collections import Counter
+            category_counts = Counter(item['category'] for item in training_data)
+            print("\n📊 Training data distribution:")
+            for category, count in sorted(category_counts.items()):
+                print(f"   {category}: {count} examples")
+
+            # Retrain the model
+            print(f"\n🔄 Retraining ML model with {len(training_data)} examples...")
+            print("⏳ This may take a few minutes...")
+
+            report = automation.ml_categorizer.train_classifier(training_data)
+
+            print("\n🎉 Model retraining completed!")
+            print("=" * 50)
+            print(f"📊 Training accuracy: {report['accuracy']:.3f}")
+            print(f"📈 Total samples: {len(training_data)}")
+
+            if 'classification_report' in report:
+                print("\n📋 Detailed Performance Report:")
+                print(report['classification_report'])
+
+            # Save the improved model
+            automation.ml_categorizer.save_models()
+            print("\n💾 Improved model saved successfully!")
+
+            print("\n💡 Next steps:")
+            print("1. Test the improved model: python gmail_automation.py --scan-unlabeled --debug-categorization")
+            print("2. Run another review session to see if fewer corrections are needed")
+            print("3. Continue editing the text file and retraining for even better accuracy")
+
+        except Exception as e:
+            print(f"❌ Error importing training data: {e}")
+            import traceback
+            traceback.print_exc()
+            return 1
+
+        return 0
+
     # Handle label creation
     if args.labels_only:
         automation.create_labels()
@@ -1306,6 +1547,8 @@ def main():
     print("   --review-clusters             Interactive cluster review for corrections")
     print("   --retrain-latest-corrections  Retrain ML model with latest corrections")
     print("   --retrain-from-corrections F  Retrain ML model with specific correction file")
+    print("   --export-training-text        Export training data to editable text format")
+    print("   --import-training-text FILE   Import and retrain from text file")
     print("   --cluster-count N             Number of clusters for review")
     print("   --confidence-threshold X      Max confidence for uncertainty sampling")
     print("   --help                        Show all options")

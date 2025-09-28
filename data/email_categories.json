@@ -4,10 +4,11 @@
       "priority": 8,
       "domains": {
         "high_confidence": [
-          "hdfcbank.com", "icicibank.com", "axisbank.com", "sbi.co.in", "kotak.com",
+          "hdfcbank.com", "hdfcbank.net", "icicibank.com", "axisbank.com", "sbi.co.in", "kotak.com",
           "americanexpress.com", "visa.com", "mastercard.com", "rupay.com",
           "rbi.org.in", "npci.org.in", "indusind.com", "yesbank.in",
-          "bankofbaroda.in", "canarabank.com", "unionbankofindia.com"
+          "bankofbaroda.in", "canarabank.com", "unionbankofindia.com",
+          "alerts@hdfcbank.net", "instaalerts"
         ],
         "medium_confidence": [
           "cred.club", "paytm.com", "phonepe.com", "googlepay.com", "amazonpay.in",
@@ -18,19 +19,26 @@
         "subject_high": [
           "account statement", "transaction alert", "credit card statement",
           "debit card", "net banking", "mobile banking", "account balance",
-          "emi deducted", "loan emi", "fd maturity", "rd maturity"
+          "emi deducted", "loan emi", "fd maturity", "rd maturity",
+          "rs.", "inr", "debited via credit card", "credited to account",
+          "instaalerts", "banking alerts", "payment due", "bill amount"
         ],
         "subject_medium": [
           "payment", "transaction", "credit", "debit", "bank", "account",
-          "otp", "verification", "statement", "balance", "emi", "loan"
+          "otp", "verification", "statement", "balance", "emi", "loan",
+          "debited", "credited", "a/c no", "outstanding", "minimum due",
+          "auto pay", "upi", "neft", "rtgs", "imps"
         ],
         "content_high": [
           "account number", "ifsc code", "transaction id", "reference number",
-          "available balance", "outstanding amount", "due date", "minimum amount due"
+          "available balance", "outstanding amount", "due date", "minimum amount due",
+          "a/c no", "hdfc bank", "credit card ending", "razorpay", "swiggy limite",
+          "transaction successful", "payment gateway", "merchant name"
         ],
         "content_medium": [
           "rupees", "inr", "credited", "debited", "withdraw", "deposit",
-          "interest", "charges", "fee", "penalty"
+          "interest", "charges", "fee", "penalty", "rs.", "towards",
+          "limite", "greetings from", "dear customer", "ending"
         ]
       },
       "exclusions": [

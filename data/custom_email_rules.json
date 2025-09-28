@@ -1,0 +1,94 @@
+{
+  "\ud83c\udfe6 Finance & Bills": {
+    "enhanced_keywords": [
+      "debited",
+      "credited",
+      "transaction",
+      "payment",
+      "bill amount",
+      "outstanding",
+      "due date",
+      "statement",
+      "a/c no",
+      "account",
+      "emi",
+      "instalment",
+      "banking",
+      "upi",
+      "neft",
+      "rtgs"
+    ],
+    "enhanced_senders": [
+      "*hdfc*",
+      "*icici*",
+      "*sbi*",
+      "*axis*",
+      "*kotak*",
+      "*alerts@*",
+      "*noreply@*bank*",
+      "*banking*",
+      "*transactions*",
+      "*instaalerts*"
+    ],
+    "subject_patterns": [
+      "*debited*",
+      "*credited*",
+      "*rs.*",
+      "*inr*",
+      "*payment*",
+      "*transaction*",
+      "*alert*",
+      "*a/c*",
+      "*account*"
+    ]
+  },
+  "\ud83d\uded2 Purchases & Receipts": {
+    "enhanced_keywords": [
+      "order",
+      "delivered",
+      "shipped",
+      "confirmed",
+      "receipt",
+      "purchase",
+      "invoice",
+      "tax invoice",
+      "refund",
+      "return",
+      "flipkart",
+      "amazon",
+      "swiggy",
+      "zomato",
+      "myntra"
+    ],
+    "enhanced_senders": [
+      "*flipkart*",
+      "*amazon*",
+      "*swiggy*",
+      "*zomato*",
+      "*myntra*",
+      "*order*",
+      "*purchase*",
+      "*delivery*",
+      "*shopping*"
+    ]
+  },
+  "\ud83d\udd14 Security & Alerts": {
+    "enhanced_keywords": [
+      "login",
+      "sign in",
+      "security",
+      "suspicious",
+      "verify",
+      "authentication",
+      "otp",
+      "password",
+      "account access"
+    ],
+    "enhanced_senders": [
+      "*security*",
+      "*no-reply*",
+      "*noreply*",
+      "*alerts*"
+    ]
+  }
+}

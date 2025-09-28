@@ -1135,7 +1135,7 @@ def main():
 
         except ImportError:
             print("❌ Email clustering reviewer not available")
-            print("💡 Make sure email_clustering_reviewer.py is in the same directory")
+            print("💡 Install required packages: pip install scikit-learn matplotlib seaborn")
         except Exception as e:
             print(f"❌ Error during cluster review: {e}")
 

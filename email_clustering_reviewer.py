@@ -21,11 +21,20 @@ from typing import Dict, List, Tuple, Optional, Set
 from dataclasses import dataclass
 from pathlib import Path
 import datetime
-from sklearn.cluster import KMeans, DBSCAN
-from sklearn.manifold import TSNE
-from sklearn.metrics import silhouette_score
-import matplotlib.pyplot as plt
-import seaborn as sns
+try:
+    from sklearn.cluster import KMeans, DBSCAN
+    from sklearn.manifold import TSNE
+    from sklearn.metrics import silhouette_score
+    SKLEARN_AVAILABLE = True
+except ImportError:
+    SKLEARN_AVAILABLE = False
+
+try:
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    PLOTTING_AVAILABLE = True
+except ImportError:
+    PLOTTING_AVAILABLE = False
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -176,6 +185,11 @@ class EmailClusteringReviewer:
         Returns:
             List of EmailCluster objects
         """
+        if not SKLEARN_AVAILABLE:
+            print("❌ Cannot create clusters: scikit-learn not available")
+            print("💡 Install with: pip install scikit-learn")
+            return []
+
         if not self.sentence_transformer or not emails:
             print("❌ Cannot create clusters: missing transformer or emails")
             return []

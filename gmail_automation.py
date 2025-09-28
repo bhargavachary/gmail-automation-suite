@@ -1275,10 +1275,14 @@ def main():
             # Convert synthetic data to correction format
             for item in synthetic_data:
                 email_data = item['email_data']
+                subject = email_data.get('subject', '')
+                snippet = email_data.get('snippet', '')
+                text = f"{subject} {snippet}".strip()
+
                 correction = {
-                    'text': f"{email_data['subject']} {email_data['snippet']}",
+                    'text': text if text else subject,
                     'category': item['category'],
-                    'sender': email_data['sender'],
+                    'sender': email_data.get('sender', 'synthetic@example.com'),
                     'metadata': {
                         'source': 'synthetic',
                         'timestamp': datetime.datetime.now().isoformat()

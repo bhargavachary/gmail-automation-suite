@@ -60,12 +60,13 @@ class EmailMLCategorizer:
     Advanced email categorization using machine learning and deep learning techniques.
     """
 
-    def __init__(self, model_dir: str = "models", categories_config: Dict = None):
+    def __init__(self, model_dir: str = "models", categories_config: Dict = None, n_topics: int = None):
         self.model_dir = Path(model_dir)
         self.model_dir.mkdir(exist_ok=True)
 
         self.categories_config = categories_config or {}
         self.categories = list(self.categories_config.get('categories', {}).keys())
+        self.n_topics = n_topics  # User-specified topic count
 
         # Model components
         self.bert_model = None
@@ -217,17 +218,26 @@ class EmailMLCategorizer:
                 random_state=42
             )
 
-            hdbscan_model = HDBSCAN(
-                min_cluster_size=5,
-                metric='euclidean',
-                cluster_selection_method='eom',
-                prediction_data=True
-            )
+            # Configure clustering with flexible topic count
+            if n_topics:
+                # User-specified number of topics - use KMeans for fixed count
+                from sklearn.cluster import KMeans
+                cluster_model = KMeans(n_clusters=n_topics, random_state=42)
+                logger.info(f"🎯 Using user-specified topic count: {n_topics}")
+            else:
+                # Auto-detect topics using HDBSCAN
+                cluster_model = HDBSCAN(
+                    min_cluster_size=5,
+                    metric='euclidean',
+                    cluster_selection_method='eom',
+                    prediction_data=True
+                )
+                logger.info("🔍 Auto-detecting optimal topic count")
 
             # Create topic model
             topic_model = BERTopic(
                 umap_model=umap_model,
-                hdbscan_model=hdbscan_model,
+                hdbscan_model=cluster_model,
                 verbose=True,
                 calculate_probabilities=True
             )
@@ -269,7 +279,7 @@ class EmailMLCategorizer:
         # Create topic model if enough data
         if len(texts) >= 20 and BERTOPIC_AVAILABLE:
             logger.info("🔄 Creating topic model...")
-            self.topic_model = self.create_topic_model(texts)
+            self.topic_model = self.create_topic_model(texts, n_topics=self.n_topics)
 
             # Add topic features
             if self.topic_model:

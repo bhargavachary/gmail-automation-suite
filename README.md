@@ -1,6 +1,8 @@
-# Gmail Automation Suite v3.0
+# 📧 Gmail Automation Suite v5.0
 
-🚀 **Advanced Gmail automation with AI-powered email categorization, smart label management, and semi-supervised learning**
+> **Intelligent Gmail Organization with AI-Powered Classification**
+
+A production-ready Gmail automation system that combines rule-based classification with advanced machine learning to intelligently categorize, label, and manage your emails automatically.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -64,38 +66,23 @@ For users who need granular categorization:
 - 📰 **Marketing & News** - Newsletters, marketing campaigns
 - 🎯 **Action Required** - Emails requiring immediate attention
 
-## 🚀 Quick Start
-
-### 1. Installation
+## 🚀 **Quick Start**
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/gmail-automation-suite.git
-cd gmail-automation-suite
+# 1. Reset everything (if starting fresh)
+python3 reset_and_start_fresh.py
 
-# Install dependencies
-pip install -r requirements.txt
-```
+# 2. Create Gmail labels
+python3 src/gmail_automation.py --labels-only --label-system consolidated
 
-### 2. Gmail API Setup
+# 3. Bootstrap AI training
+python3 src/gmail_automation.py --bootstrap-training
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing one
-3. Enable Gmail API
-4. Create OAuth 2.0 credentials
-5. Download `credentials.json` to project root
+# 4. Start with small test
+python3 src/gmail_automation.py --scan-emails --max-emails 100 --days-back 7
 
-### 3. Basic Usage
-
-```bash
-# Create labels (choose your system)
-python gmail_automation.py --labels-only --label-system consolidated
-
-# Scan and categorize emails
-python gmail_automation.py --scan-emails --concurrent
-
-# Review and improve with AI
-python gmail_automation.py --review-clusters
+# 5. Daily automation (add to cron)
+python3 src/gmail_automation.py --scan-unlabeled --days-back 1 --concurrent
 ```
 
 ## 📖 Comprehensive Usage Guide

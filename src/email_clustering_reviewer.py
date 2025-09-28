@@ -14,6 +14,7 @@ Features:
 """
 
 import json
+import os
 import pickle
 import numpy as np
 import pandas as pd
@@ -206,14 +207,38 @@ class EmailClusteringReviewer:
         print("   🤖 Generating embeddings...")
         embeddings = self.sentence_transformer.encode(email_texts)
 
+        # Handle edge case of very few emails
+        if n_clusters <= 1 or len(emails) < 2:
+            print(f"   💡 Too few emails for clustering ({len(emails)} emails, need at least 2)")
+            # Create a single cluster with all emails
+
+            # Determine predicted category (most common)
+            categories = [email.get('predicted_category', 'Unknown') for email in emails]
+            predicted_category = max(set(categories), key=categories.count) if categories else 'Unknown'
+
+            # Calculate average confidence
+            confidences = [email.get('confidence', 0.0) for email in emails]
+            avg_confidence = np.mean(confidences) if confidences else 0.0
+
+            cluster = EmailCluster(
+                cluster_id=0,
+                emails=emails,
+                predicted_category=predicted_category,
+                confidence=avg_confidence
+            )
+            return [cluster]
+
         # Perform clustering
         print("   🎯 Performing K-means clustering...")
         kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
         cluster_labels = kmeans.fit_predict(embeddings)
 
-        # Calculate silhouette score
-        silhouette_avg = silhouette_score(embeddings, cluster_labels)
-        print(f"   📊 Clustering silhouette score: {silhouette_avg:.3f}")
+        # Calculate silhouette score only if we have valid clusters
+        if n_clusters > 1 and len(set(cluster_labels)) > 1:
+            silhouette_avg = silhouette_score(embeddings, cluster_labels)
+            print(f"   📊 Clustering silhouette score: {silhouette_avg:.3f}")
+        else:
+            print(f"   📊 Single cluster created - no silhouette score calculated")
 
         # Create cluster objects
         clusters = []
@@ -399,6 +424,36 @@ class EmailClusteringReviewer:
         print(f"   ✏️ Corrections made: {session.corrections_made}")
         print(f"   📦 Clusters completed: {session.clusters_completed}")
 
+        # Ask user what to do with the reviewed data
+        if session.corrections_made > 0:
+            print(f"\n🤖 You made {session.corrections_made} corrections!")
+            print("❓ What would you like to do with the reviewed data?")
+            print("   1. 🧠 Retrain and improve the model with corrections")
+            print("   2. 💾 Just save the reviewed data (no retraining)")
+            print("   3. 🔍 Show me the corrections first, then decide")
+
+            choice = input("\n👉 Enter your choice (1/2/3): ").strip()
+
+            if choice == "1":
+                self._retrain_model_with_corrections(session_id)
+            elif choice == "2":
+                print("💾 Corrections saved for future use")
+                self._export_training_data_summary(session_id)
+            elif choice == "3":
+                self._show_corrections_summary(session_id)
+                # Ask again after showing corrections
+                retrain_choice = input("\n❓ Now retrain the model? (y/N): ").strip().lower()
+                if retrain_choice in ['y', 'yes']:
+                    self._retrain_model_with_corrections(session_id)
+                else:
+                    print("💾 Corrections saved for future use")
+                    self._export_training_data_summary(session_id)
+            else:
+                print("💾 Invalid choice - corrections saved for future use")
+                self._export_training_data_summary(session_id)
+        else:
+            print("\n💡 No corrections were made in this session")
+
         return session
 
     def export_training_data(self, session_id: Optional[str] = None) -> str:
@@ -407,18 +462,27 @@ class EmailClusteringReviewer:
         if session_id:
             corrections = [c for c in corrections if c['session_id'] == session_id]
 
-        filename = f"corrected_training_data_{session_id or 'all'}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        # Determine appropriate data directory
+        data_dirs = ['../data/training', 'data/training', '.']
+        save_dir = '.'
+
+        for data_dir in data_dirs:
+            if os.path.exists(data_dir):
+                save_dir = data_dir
+                break
+
+        filename = os.path.join(save_dir, f"corrected_training_data_{session_id or 'all'}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
 
         training_data = []
         for correction in corrections:
             training_data.append({
-                'text': f"{correction['email_data']['subject']} {correction['email_data']['snippet']}",
+                'email_data': correction['email_data'],  # Keep full email data for ML training
                 'category': correction['corrected_category'],
-                'sender': correction['email_data']['sender'],
                 'metadata': {
                     'original_prediction': correction['original_prediction'],
                     'session_id': correction['session_id'],
-                    'timestamp': correction['timestamp']
+                    'timestamp': correction['timestamp'],
+                    'source': 'semi_supervised_correction'
                 }
             })
 
@@ -450,10 +514,111 @@ class EmailClusteringReviewer:
 
     def _save_corrections(self, session_id: str):
         """Save corrections to file"""
-        filename = f"review_corrections_{session_id}.json"
+        # Determine appropriate data directory
+        data_dirs = ['../data/corrections', 'data/corrections', '.']
+        save_dir = '.'
+
+        for data_dir in data_dirs:
+            if os.path.exists(data_dir):
+                save_dir = data_dir
+                break
+
+        filename = os.path.join(save_dir, f"review_corrections_{session_id}.json")
         with open(filename, 'w') as f:
             json.dump(self.corrections_database, f, indent=2)
         print(f"💾 Saved corrections to {filename}")
+
+    def _show_corrections_summary(self, session_id: str):
+        """Show summary of corrections made in this session"""
+        session_corrections = [c for c in self.corrections_database if c['session_id'] == session_id]
+
+        if not session_corrections:
+            print("📝 No corrections found for this session")
+            return
+
+        print(f"\n📋 Corrections Summary for Session {session_id}")
+        print("=" * 50)
+
+        from collections import Counter
+        original_categories = [c['original_category'] for c in session_corrections]
+        corrected_categories = [c['corrected_category'] for c in session_corrections]
+
+        print(f"📊 Total corrections: {len(session_corrections)}")
+        print(f"\n🔄 Category changes:")
+
+        category_changes = {}
+        for correction in session_corrections:
+            change = f"{correction['original_category']} → {correction['corrected_category']}"
+            category_changes[change] = category_changes.get(change, 0) + 1
+
+        for change, count in sorted(category_changes.items()):
+            print(f"   {change} ({count}x)")
+
+        print(f"\n📧 Sample corrections:")
+        for i, correction in enumerate(session_corrections[:3]):
+            print(f"   {i+1}. From: {correction['email_data']['sender']}")
+            print(f"      Subject: {correction['email_data']['subject'][:60]}...")
+            print(f"      Changed: {correction['original_category']} → {correction['corrected_category']}")
+
+        if len(session_corrections) > 3:
+            print(f"      ... and {len(session_corrections) - 3} more corrections")
+
+    def _export_training_data_summary(self, session_id: str):
+        """Export training data and show summary"""
+        training_file = self.export_training_data(session_id)
+        print(f"\n📄 Training data exported to: {training_file}")
+        print("💡 You can use this data later with:")
+        print(f"   python gmail_automation.py --retrain-from-corrections {training_file}")
+
+    def _retrain_model_with_corrections(self, session_id: str):
+        """Retrain the ML model with the corrections from this session"""
+        print(f"\n🔄 Starting model retraining with session {session_id} corrections...")
+
+        if not self.gmail_automation or not hasattr(self.gmail_automation, 'ml_categorizer'):
+            print("❌ Gmail automation or ML categorizer not available for retraining")
+            self._export_training_data_summary(session_id)
+            return
+
+        try:
+            # Export training data first
+            training_file = self.export_training_data(session_id)
+
+            # Get ML categorizer
+            ml_categorizer = self.gmail_automation.ml_categorizer
+            if not ml_categorizer:
+                print("❌ ML categorizer not initialized")
+                self._export_training_data_summary(session_id)
+                return
+
+            # Load the training data
+            with open(training_file, 'r') as f:
+                training_data = json.load(f)
+
+            print(f"📊 Loaded {len(training_data)} corrected examples for retraining")
+
+            # Retrain the model
+            print("🧠 Retraining ML model... This may take a few minutes")
+            report = ml_categorizer.train_classifier(training_data)
+
+            print(f"\n✅ Model retraining completed!")
+            print(f"📈 New model accuracy: {report.get('accuracy', 'N/A'):.3f}")
+
+            # Show improvement metrics if available
+            if 'classification_report' in report:
+                print(f"📊 Classification improvements:")
+                print(f"   • Precision: {report.get('precision', 'N/A')}")
+                print(f"   • Recall: {report.get('recall', 'N/A')}")
+                print(f"   • F1-Score: {report.get('f1_score', 'N/A')}")
+
+            print(f"\n🎯 The model is now smarter and should categorize emails better!")
+            print(f"💾 Training data also saved to: {training_file}")
+
+        except Exception as e:
+            print(f"❌ Error during retraining: {e}")
+            print("💾 Corrections saved for manual retraining later")
+            self._export_training_data_summary(session_id)
+            import traceback
+            traceback.print_exc()
 
 def main():
     """Example usage of the clustering reviewer"""

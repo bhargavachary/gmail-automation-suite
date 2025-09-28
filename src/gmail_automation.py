@@ -348,7 +348,7 @@ class GmailAutomationUnified:
             except Exception as e:
                 print(f"⚠️ ML categorization failed, using rule-based: {e}")
 
-        # Fallback to rule-based categorization
+        # Use rule-based categorization
         return self._categorize_email_rule_based(email_data)
 
     def categorize_email_debug(self, email_data: Dict) -> Dict:
@@ -770,9 +770,7 @@ class GmailAutomationUnified:
             for i, msg_id in enumerate(message_ids):
                 email = self.service.users().messages().get(
                     userId='me',
-                    id=msg_id,
-                    format='metadata',
-                    metadataHeaders=['From', 'Subject', 'Date']
+                    id=msg_id
                 ).execute()
                 emails_to_process.append(email)
 
@@ -870,16 +868,20 @@ class GmailAutomationUnified:
 
                 # Categorize email
                 if debug and i < 3:  # Show debug for first few emails
-                    debug_info = self.categorize_email_debug(email_data)
-                    suggested_label = debug_info['final_category']
+                    try:
+                        debug_info = self.categorize_email_debug(email_data)
+                        suggested_label = debug_info['final_category']
 
-                    print(f"    🔍 DEBUG: {debug_info['email']['sender'][:30]}")
-                    print(f"       Subject: {debug_info['email']['subject']}")
-                    print(f"       Rule-based scores: {debug_info['rule_based']['scores']}")
-                    if 'ml_prediction' in debug_info:
-                        print(f"       ML method: {debug_info.get('method_used', 'unknown')}")
-                        print(f"       ML confidence: {debug_info.get('final_confidence', 0):.2f}")
-                    print(f"       Final result: {suggested_label}")
+                        print(f"    🔍 DEBUG: {debug_info['email']['sender'][:30]}")
+                        print(f"       Subject: {debug_info['email']['subject']}")
+                        print(f"       Rule-based scores: {debug_info['rule_based']['scores']}")
+                        if 'ml_prediction' in debug_info:
+                            print(f"       ML method: {debug_info.get('method_used', 'unknown')}")
+                            print(f"       ML confidence: {debug_info.get('final_confidence', 0):.2f}")
+                        print(f"       Final result: {suggested_label}")
+                    except Exception as debug_e:
+                        print(f"    ⚠️ Debug mode failed: {debug_e}, falling back to normal categorization")
+                        suggested_label = self.categorize_email(email_data)
                 else:
                     suggested_label = self.categorize_email(email_data)
 
@@ -1330,7 +1332,10 @@ def main():
     # Handle semi-supervised learning review
     if args.review_clusters:
         try:
-            from .email_clustering_reviewer import EmailClusteringReviewer
+            try:
+                from .email_clustering_reviewer import EmailClusteringReviewer
+            except ImportError:
+                from email_clustering_reviewer import EmailClusteringReviewer
             print("🎯 Starting Semi-Supervised Learning Review Session")
             print("=" * 60)
 
@@ -1372,11 +1377,14 @@ def main():
             else:
                 print("\n✅ Review completed - no corrections needed!")
 
-        except ImportError:
+        except ImportError as e:
             print("❌ Email clustering reviewer not available")
+            print(f"⚠️ Import error: {e}")
             print("💡 Install required packages: pip install scikit-learn matplotlib seaborn")
         except Exception as e:
             print(f"❌ Error during cluster review: {e}")
+            import traceback
+            traceback.print_exc()
 
         return 0
 

@@ -76,6 +76,12 @@ models/topic_model*
 data/corrections/corrected_training_data_*.json
 data/corrections/review_corrections_*.json
 data/training/training_data_editable_*.txt
+data/backups/
+data/training/
+data/*.joblib
+data/*.pkl
+data/feedback_log.json
+data/rule_backups/
 
 # Backup Files
 *.bak
@@ -90,3 +96,51 @@ migration_report.txt
 
 # Generated bootstrap files with timestamps
 *bootstrap*_[0-9]*.json
+
+# Backup directory (legacy code backup)
+backup/
+
+# Archive directory (performance reports)
+archive/
+
+# Reset and operational backups
+reset_backup_*.json
+*_backup_*.json
+
+# Performance and analysis reports
+performance_analysis.json
+monthly_performance.json
+weekly_performance.json
+daily_*.json
+filter_*.json
+classification_*.json
+*_summary.json
+
+# Temporary test files
+test_*.json
+debug_*.json
+health_check.json
+
+# Installation scripts and temporary files
+*.sh
+Miniforge*
+conda-*
+
+# PyTest and testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation build files
+docs/_build/
+docs/.doctrees/
+
+# Jupyter notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment variables
+.env
+.env.local
+.env.*.local

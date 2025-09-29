@@ -1,255 +1,450 @@
 {
   "categories": {
-    "🏦 Banking & Finance": {
+    "\ud83c\udfe6 Finance & Bills": {
       "priority": 8,
       "domains": {
         "high_confidence": [
-          "hdfcbank.com", "hdfcbank.net", "icicibank.com", "axisbank.com", "sbi.co.in", "kotak.com",
-          "americanexpress.com", "visa.com", "mastercard.com", "rupay.com",
-          "rbi.org.in", "npci.org.in", "indusind.com", "yesbank.in",
-          "bankofbaroda.in", "canarabank.com", "unionbankofindia.com",
-          "alerts@hdfcbank.net", "instaalerts"
+          "hdfcbank.com",
+          "hdfcbank.net",
+          "icicibank.com",
+          "axisbank.com",
+          "sbi.co.in",
+          "kotak.com",
+          "americanexpress.com",
+          "visa.com",
+          "mastercard.com",
+          "rupay.com",
+          "rbi.org.in",
+          "npci.org.in",
+          "indusind.com",
+          "yesbank.in",
+          "bankofbaroda.in",
+          "canarabank.com",
+          "unionbankofindia.com",
+          "alerts@hdfcbank.net",
+          "instaalerts",
+          "pnb.co.in",
+          "centralbankofindia.co.in",
+          "indianbank.in",
+          "bankofindia.co.in",
+          "denabank.com",
+          "idbi.com",
+          "rbl.com",
+          "federalbank.co.in",
+          "southindianbank.com",
+          "cityunionbank.com",
+          "alerts@axisbank.com"
         ],
         "medium_confidence": [
-          "cred.club", "paytm.com", "phonepe.com", "googlepay.com", "amazonpay.in",
-          "mobikwik.com", "freecharge.com", "airtel.money", "jio.money"
+          "cred.club",
+          "paytm.com",
+          "phonepe.com",
+          "googlepay.com",
+          "amazonpay.in",
+          "mobikwik.com",
+          "freecharge.com",
+          "airtel.money",
+          "jio.money",
+          "bhim.in",
+          "gpay.com",
+          "bharatpe.com",
+          "slice.it",
+          "uni.club",
+          "transactions.indmoney.com"
         ]
       },
       "keywords": {
         "subject_high": [
-          "account statement", "transaction alert", "credit card statement",
-          "debit card", "net banking", "mobile banking", "account balance",
-          "emi deducted", "loan emi", "fd maturity", "rd maturity",
-          "rs.", "inr", "debited via credit card", "credited to account",
-          "instaalerts", "banking alerts", "payment due", "bill amount"
+          "account statement",
+          "transaction alert",
+          "credit card statement",
+          "debit card",
+          "net banking",
+          "mobile banking",
+          "account balance",
+          "emi deducted",
+          "loan emi",
+          "fd maturity",
+          "rd maturity",
+          "rs.",
+          "inr",
+          "debited via credit card",
+          "credited to account",
+          "instaalerts",
+          "banking alerts",
+          "payment due",
+          "bill amount",
+          "overdraft",
+          "cheque bounce",
+          "standing instruction",
+          "auto debit",
+          "payment gateway",
+          "payment failed",
+          "payment successful",
+          "payment confirmation",
+          "debited",
+          "credited",
+          "payment reminder",
+          "instaalerts"
         ],
         "subject_medium": [
-          "payment", "transaction", "credit", "debit", "bank", "account",
-          "otp", "verification", "statement", "balance", "emi", "loan",
-          "debited", "credited", "a/c no", "outstanding", "minimum due",
-          "auto pay", "upi", "neft", "rtgs", "imps"
+          "payment",
+          "transaction",
+          "credit",
+          "debit",
+          "bank",
+          "account",
+          "otp",
+          "verification",
+          "statement",
+          "balance",
+          "emi",
+          "loan",
+          "debited",
+          "credited",
+          "a/c no",
+          "outstanding",
+          "minimum due",
+          "auto pay",
+          "upi",
+          "neft",
+          "rtgs",
+          "imps",
+          "wallet",
+          "recharge",
+          "transfer",
+          "deposit",
+          "withdraw",
+          "atm",
+          "pos",
+          "swipe"
         ],
         "content_high": [
-          "account number", "ifsc code", "transaction id", "reference number",
-          "available balance", "outstanding amount", "due date", "minimum amount due",
-          "a/c no", "hdfc bank", "credit card ending", "razorpay", "swiggy limite",
-          "transaction successful", "payment gateway", "merchant name"
+          "account number",
+          "ifsc code",
+          "transaction id",
+          "reference number",
+          "available balance",
+          "outstanding amount",
+          "due date",
+          "minimum amount due",
+          "a/c no",
+          "hdfc bank",
+          "credit card ending",
+          "razorpay",
+          "swiggy limite",
+          "transaction successful",
+          "payment gateway",
+          "merchant name",
+          "current balance",
+          "ledger balance",
+          "principal amount",
+          "interest earned",
+          "service charges",
+          "annual fee",
+          "late payment fee",
+          "overlimit fee"
         ],
         "content_medium": [
-          "rupees", "inr", "credited", "debited", "withdraw", "deposit",
-          "interest", "charges", "fee", "penalty", "rs.", "towards",
-          "limite", "greetings from", "dear customer", "ending"
+          "rupees",
+          "inr",
+          "credited",
+          "debited",
+          "withdraw",
+          "deposit",
+          "interest",
+          "charges",
+          "fee",
+          "penalty",
+          "rs.",
+          "towards",
+          "limite",
+          "greetings from",
+          "dear customer",
+          "ending",
+          "bill payment",
+          "utility",
+          "insurance premium",
+          "loan payment",
+          "a/c no",
+          "instalment",
+          "banking",
+          "upi",
+          "neft",
+          "rtgs"
         ]
       },
       "exclusions": [
-        "promotional", "offer", "cashback offer", "credit card application"
+        "promotional",
+        "offer",
+        "cashback offer",
+        "credit card application",
+        "pre-approved",
+        "instant approval",
+        "apply now",
+        "limited time"
       ]
     },
-
-    "📈 Investments & Trading": {
-      "priority": 7,
-      "domains": {
-        "high_confidence": [
-          "zerodha.com", "groww.in", "upstox.com", "angelone.in", "5paisa.com",
-          "icicidirect.com", "hdfcsec.com", "kotaksecurities.com", "sharekhan.com",
-          "motilaloswalsecurities.com"
-        ],
-        "medium_confidence": [
-          "kfintech.com", "camsonline.com", "indmoney.com", "kuvera.in",
-          "coin.zerodha.com", "etmoney.com", "paytmmoney.com"
-        ]
-      },
-      "keywords": {
-        "subject_high": [
-          "contract note", "trade confirmation", "portfolio statement", "mutual fund",
-          "sip installment", "dividend credit", "bonus shares", "rights issue",
-          "ipo allotment", "nfo"
-        ],
-        "subject_medium": [
-          "investment", "trading", "demat", "sip", "portfolio", "shares",
-          "stock", "equity", "dividend", "nav", "fund", "scheme"
-        ],
-        "content_high": [
-          "demat account", "trading account", "folio number", "isin",
-          "settlement", "brokerage", "margin", "exposure"
-        ],
-        "content_medium": [
-          "buy", "sell", "quantity", "price", "value", "p&l", "profit", "loss"
-        ]
-      }
-    },
-
-    "🔔 Alerts & Security": {
-      "priority": 10,
-      "domains": {
-        "high_confidence": [
-          "accounts.google.com", "appleid.apple.com", "account.microsoft.com",
-          "security.facebook.com", "security.twitter.com", "security.linkedin.com"
-        ],
-        "medium_confidence": [
-          "noreply", "security", "alerts", "notification"
-        ]
-      },
-      "keywords": {
-        "subject_high": [
-          "security alert", "suspicious activity", "unauthorized access",
-          "login attempt", "password changed", "account compromised",
-          "two-factor authentication", "verification required"
-        ],
-        "subject_medium": [
-          "security", "verification", "alert", "suspicious", "unauthorized",
-          "password", "login", "2fa", "otp", "breach"
-        ],
-        "content_high": [
-          "unusual activity", "new device", "location", "ip address",
-          "immediately secure", "verify identity", "account security"
-        ]
-      }
-    },
-
-    "🛒 Shopping & Orders": {
+    "\ud83d\uded2 Purchases & Receipts": {
       "priority": 6,
       "domains": {
         "high_confidence": [
-          "amazon.in", "amazon.com", "flipkart.com", "myntra.com", "ajio.com",
-          "nykaa.com", "tatacliq.com", "meesho.com", "snapdeal.com",
-          "shopclues.com", "limeroad.com", "jabong.com"
+          "amazon.in",
+          "amazon.com",
+          "flipkart.com",
+          "myntra.com",
+          "ajio.com",
+          "nykaa.com",
+          "tatacliq.com",
+          "meesho.com",
+          "snapdeal.com",
+          "shopclues.com",
+          "limeroad.com",
+          "jabong.com",
+          "swiggy.in",
+          "zomato.com",
+          "ncb.flipkart.com",
+          "order-update@amazon.in"
         ],
         "medium_confidence": [
-          "bigbasket.com", "grofers.com", "blinkit.com", "dunzo.com",
-          "1mg.com", "pharmeasy.com", "netmeds.com"
+          "bigbasket.com",
+          "grofers.com",
+          "blinkit.com",
+          "dunzo.com",
+          "1mg.com",
+          "pharmeasy.com",
+          "netmeds.com"
         ]
       },
       "keywords": {
         "subject_high": [
-          "order confirmed", "order shipped", "out for delivery", "delivered",
-          "order cancelled", "return initiated", "refund processed",
-          "tracking number", "delivery update"
+          "order confirmed",
+          "order shipped",
+          "out for delivery",
+          "delivered",
+          "order cancelled",
+          "return initiated",
+          "refund processed",
+          "tracking number",
+          "delivery update",
+          "your order",
+          "receipt for",
+          "invoice from"
         ],
         "subject_medium": [
-          "order", "delivery", "shipped", "tracking", "invoice", "receipt",
-          "purchase", "cart", "checkout", "payment successful"
+          "order",
+          "delivery",
+          "shipped",
+          "tracking",
+          "invoice",
+          "receipt",
+          "purchase",
+          "cart",
+          "checkout",
+          "payment successful"
         ],
         "content_high": [
-          "order number", "tracking id", "delivery address", "expected delivery",
-          "courier partner", "package", "item"
+          "order number",
+          "tracking id",
+          "delivery address",
+          "expected delivery",
+          "courier partner",
+          "package",
+          "item"
         ]
       }
     },
-
-    "✈️ Travel & Transport": {
+    "\ud83d\udd14 Security & Alerts": {
+      "priority": 10,
+      "domains": {
+        "high_confidence": [
+          "accounts.google.com",
+          "appleid.apple.com",
+          "account.microsoft.com",
+          "security.facebook.com",
+          "security.twitter.com",
+          "security.linkedin.com",
+          "security.google.com"
+        ],
+        "medium_confidence": [
+          "noreply",
+          "security",
+          "alerts",
+          "notification"
+        ]
+      },
+      "keywords": {
+        "subject_high": [
+          "security alert",
+          "suspicious activity",
+          "unauthorized access",
+          "login attempt",
+          "password changed",
+          "account compromised",
+          "two-factor authentication",
+          "verification required",
+          "sign-in attempt",
+          "security notification",
+          "verify your identity"
+        ],
+        "subject_medium": [
+          "security",
+          "verification",
+          "alert",
+          "suspicious",
+          "unauthorized",
+          "password",
+          "login",
+          "2fa",
+          "otp",
+          "breach"
+        ],
+        "content_high": [
+          "unusual activity",
+          "new device",
+          "location",
+          "ip address",
+          "immediately secure",
+          "verify identity",
+          "account security"
+        ]
+      }
+    },
+    "\u2708\ufe0f Services & Subscriptions": {
       "priority": 5,
       "domains": {
         "high_confidence": [
-          "makemytrip.com", "goibibo.com", "cleartrip.com", "yatra.com",
-          "irctc.co.in", "redbus.in", "abhibus.com",
-          "indigo.com", "airindia.in", "vistara.com", "spicejet.com"
+          "makemytrip.com",
+          "goibibo.com",
+          "cleartrip.com",
+          "yatra.com",
+          "irctc.co.in",
+          "redbus.in",
+          "abhibus.com",
+          "indigo.com",
+          "airindia.in",
+          "vistara.com",
+          "spicejet.com"
         ],
         "medium_confidence": [
-          "uber.com", "ola.in", "rapido.bike", "booking.com", "agoda.com",
-          "hotels.com", "oyo.com", "treebo.com"
+          "uber.com",
+          "ola.in",
+          "rapido.bike",
+          "booking.com",
+          "agoda.com",
+          "hotels.com",
+          "oyo.com",
+          "treebo.com"
         ]
       },
       "keywords": {
         "subject_high": [
-          "booking confirmation", "ticket confirmed", "pnr", "boarding pass",
-          "flight status", "train status", "cab booked", "hotel booking",
-          "check-in", "itinerary"
+          "booking confirmation",
+          "ticket confirmed",
+          "pnr",
+          "boarding pass",
+          "flight status",
+          "train status",
+          "cab booked",
+          "hotel booking",
+          "check-in",
+          "itinerary"
         ],
         "subject_medium": [
-          "ticket", "booking", "travel", "flight", "train", "hotel",
-          "cab", "ride", "journey", "trip", "reservation"
+          "ticket",
+          "booking",
+          "travel",
+          "flight",
+          "train",
+          "hotel",
+          "cab",
+          "ride",
+          "journey",
+          "trip",
+          "reservation"
         ],
         "content_high": [
-          "departure", "arrival", "gate", "platform", "seat", "berth",
-          "terminal", "airport", "station"
+          "departure",
+          "arrival",
+          "gate",
+          "platform",
+          "seat",
+          "berth",
+          "terminal",
+          "airport",
+          "station"
         ]
       }
     },
-
-    "🏥 Insurance & Services": {
-      "priority": 4,
-      "domains": {
-        "high_confidence": [
-          "policybazaar.com", "acko.com", "hdfcergo.com", "icicilombard.com",
-          "bajajallianz.com", "reliancegeneral.co.in", "orientalinsurance.org.in",
-          "tata1mg.com", "1mg.com", "pharmeasy.com", "apollo247.com"
-        ]
-      },
-      "keywords": {
-        "subject_high": [
-          "policy renewed", "premium due", "claim approved", "claim rejected",
-          "health checkup", "prescription", "medical report", "insurance"
-        ],
-        "subject_medium": [
-          "policy", "premium", "claim", "insurance", "health", "medical",
-          "doctor", "hospital", "appointment", "checkup"
-        ]
-      }
-    },
-
-    "📦 Receipts & Archive": {
-      "priority": 3,
-      "domains": {
-        "high_confidence": [
-          "netflix.com", "primevideo.com", "hotstar.com", "sony.com",
-          "spotify.com", "youtube.com", "apple.com", "microsoft.com"
-        ],
-        "medium_confidence": [
-          "swiggy.in", "zomato.com", "dominos.co.in", "pizzahut.co.in",
-          "kfc.co.in", "mcdonalds.co.in", "bookmyshow.com", "paytm.com"
-        ]
-      },
-      "keywords": {
-        "subject_high": [
-          "subscription renewed", "payment receipt", "bill paid", "invoice",
-          "subscription expires", "auto-renewal", "membership"
-        ],
-        "subject_medium": [
-          "receipt", "invoice", "bill", "subscription", "renewal",
-          "payment successful", "membership", "plan"
-        ]
-      }
-    },
-
-    "📰 Marketing & News": {
+    "\ud83d\udcf0 Promotions & Marketing": {
       "priority": 2,
       "domains": {
         "medium_confidence": [
-          "newsletter", "news", "updates", "marketing", "promo"
+          "newsletter",
+          "news",
+          "updates",
+          "marketing",
+          "promo"
         ]
       },
       "keywords": {
         "subject_high": [
-          "unsubscribe", "newsletter", "weekly digest", "daily news",
-          "promotional offer", "limited time offer", "sale", "discount"
+          "unsubscribe",
+          "newsletter",
+          "weekly digest",
+          "daily news",
+          "promotional offer",
+          "limited time offer",
+          "sale",
+          "discount"
         ],
         "subject_medium": [
-          "news", "update", "briefing", "offer", "deal", "sale",
-          "discount", "promotion", "marketing", "campaign"
+          "news",
+          "update",
+          "briefing",
+          "offer",
+          "deal",
+          "sale",
+          "discount",
+          "promotion",
+          "marketing",
+          "campaign"
         ],
         "content_high": [
-          "unsubscribe", "click here", "limited time", "hurry", "expires soon"
+          "unsubscribe",
+          "click here",
+          "limited time",
+          "hurry",
+          "expires soon"
         ]
       }
     },
-
-    "👤 Personal & Work": {
+    "\ud83d\udc64 Personal & Social": {
       "priority": 1,
       "domains": {
         "medium_confidence": [
-          "gmail.com", "outlook.com", "yahoo.com", "company.com"
+          "gmail.com",
+          "outlook.com",
+          "yahoo.com",
+          "company.com"
         ]
       },
       "keywords": {
         "subject_medium": [
-          "meeting", "project", "deadline", "report", "document",
-          "colleague", "team", "office", "work", "personal"
+          "meeting",
+          "project",
+          "deadline",
+          "report",
+          "document",
+          "colleague",
+          "team",
+          "office",
+          "work",
+          "personal"
         ]
       }
     }
   },
-
   "global_settings": {
     "confidence_threshold": 0.4,
     "max_categories_per_email": 1,
@@ -257,7 +452,6 @@
     "case_sensitive": false,
     "language": "en"
   },
-
   "scoring_weights": {
     "domain_high_confidence": 1.2,
     "domain_medium_confidence": 0.8,
@@ -265,7 +459,7 @@
     "subject_medium": 0.6,
     "content_high": 0.7,
     "content_medium": 0.4,
-    "exclusion_penalty": -0.8,
+    "exclusion_penalty": -10.0,
     "priority_bonus": 0.15
   }
 }

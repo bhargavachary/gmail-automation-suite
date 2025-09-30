@@ -211,13 +211,13 @@ class GmailClient:
 
     def search_messages(self,
                        query: str = "",
-                       max_results: int = 100) -> List[str]:
+                       max_results: Optional[int] = 100) -> List[str]:
         """
         Search for messages using Gmail search syntax.
 
         Args:
             query: Gmail search query (e.g., "is:unread", "from:example.com")
-            max_results: Maximum number of messages to return
+            max_results: Maximum number of messages to return (None for exhaustive search)
 
         Returns:
             List of message IDs
@@ -226,10 +226,17 @@ class GmailClient:
             message_ids = []
             page_token = None
 
-            while len(message_ids) < max_results:
-                # Calculate remaining messages needed
-                remaining = max_results - len(message_ids)
-                page_size = min(remaining, 500)  # Gmail API max per page
+            while True:
+                # Calculate page size
+                if max_results is None:
+                    # Exhaustive search - use max page size
+                    page_size = 500
+                else:
+                    # Limited search - calculate remaining
+                    remaining = max_results - len(message_ids)
+                    if remaining <= 0:
+                        break
+                    page_size = min(remaining, 500)  # Gmail API max per page
 
                 result = self.service.users().messages().list(
                     userId=self.user_id,
@@ -246,7 +253,7 @@ class GmailClient:
                     break
 
             logger.info(f"Found {len(message_ids)} messages for query: '{query}'")
-            return message_ids[:max_results]
+            return message_ids if max_results is None else message_ids[:max_results]
 
         except HttpError as e:
             logger.error(f"Failed to search messages: {e}")

@@ -9,9 +9,12 @@ import re
 from typing import Dict, List, Optional, Any, Tuple
 from collections import defaultdict
 import logging
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..models.email import Email, ClassificationResult
 from ..core.config import Config, CategoryConfig, ScoringWeights
+from ..core.email_cache import EmailCache
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -264,16 +267,25 @@ class EmailClassifier:
     with configurable fallback strategies and confidence thresholds.
     """
 
-    def __init__(self, config: Config, model_dir: Optional[str] = None):
+    def __init__(self, config: Config, model_dir: Optional[str] = None, cache_dir: Optional[Path] = None):
         """
         Initialize email classifier.
 
         Args:
             config: Configuration object
             model_dir: Directory containing ML models (optional)
+            cache_dir: Directory for email cache (optional)
         """
         self.config = config
         self.rule_classifier = RuleBasedClassifier(config)
+
+        # Initialize email cache
+        if cache_dir:
+            self.cache = EmailCache(cache_dir)
+        else:
+            # Default cache location
+            default_cache = Path("data") / "cache"
+            self.cache = EmailCache(default_cache)
 
         # Initialize ML classifier if available
         if ML_AVAILABLE and model_dir:
@@ -290,7 +302,7 @@ class EmailClassifier:
         # Placeholder for future classifiers
         self.llm_classifier = None
 
-        logger.info("Email classifier initialized")
+        logger.info("Email classifier initialized with caching enabled")
 
     def classify_email(self, email: Email, method: str = "rule_based") -> Optional[ClassificationResult]:
         """
@@ -326,48 +338,352 @@ class EmailClassifier:
             logger.error(f"Classification failed for email {email.metadata.message_id}: {e}")
             raise EmailClassifierError(f"Classification error: {e}")
 
-    def classify_batch(self, emails: List[Email], method: str = "rule_based") -> List[Tuple[Email, Optional[ClassificationResult]]]:
+    def classify_batch(self, emails: List[Email], method: str = "rule_based", use_cache: bool = True) -> List[Tuple[Email, Optional[ClassificationResult]]]:
         """
-        Classify multiple emails efficiently.
+        Classify multiple emails efficiently with caching support.
 
         Args:
             emails: List of Email objects to classify
             method: Classification method to use
+            use_cache: Whether to use cached results and store new classifications
 
         Returns:
             List of (Email, ClassificationResult) tuples
         """
         results = []
         total_emails = len(emails)
+        cached_count = 0
+        new_classifications = 0
 
-        logger.info(f"Starting batch classification of {total_emails} emails using {method}")
+        logger.info(f"Starting batch classification of {total_emails} emails using {method} (cache: {use_cache})")
 
-        # Use batch processing for ML methods if available
-        if (method == "ml" or method == "random_forest") and self.ml_classifier:
-            try:
-                results = self.ml_classifier.classify_batch(emails, "random_forest")
-            except Exception as e:
-                logger.error(f"ML batch classification failed: {e}")
-                results = [(email, None) for email in emails]
-        else:
-            # Standard batch processing for rule-based and other methods
-            for i, email in enumerate(emails, 1):
-                try:
-                    result = self.classify_email(email, method)
+        # Separate cached and uncached emails
+        emails_to_process = []
+        if use_cache:
+            for email in emails:
+                cached_result = self.cache.get_cached_classification(email.metadata.message_id)
+                if cached_result:
+                    # Use cached result
+                    category, confidence = cached_result
+                    result = ClassificationResult(
+                        category=category,
+                        confidence=confidence,
+                        method=f"{method}_cached"
+                    )
                     results.append((email, result))
+                    cached_count += 1
+                else:
+                    emails_to_process.append(email)
+        else:
+            emails_to_process = emails
 
-                    if i % 10 == 0 or i == total_emails:
-                        logger.info(f"Processed {i}/{total_emails} emails")
+        logger.info(f"Found {cached_count} cached results, processing {len(emails_to_process)} new emails")
 
+        # Process uncached emails
+        if emails_to_process:
+            # Use batch processing for ML methods if available
+            if (method == "ml" or method == "random_forest") and self.ml_classifier:
+                try:
+                    new_results = self.ml_classifier.classify_batch(emails_to_process, "random_forest")
+                    results.extend(new_results)
+                    new_classifications = len([r for _, r in new_results if r is not None])
                 except Exception as e:
-                    logger.warning(f"Failed to classify email {i}: {e}")
-                    results.append((email, None))
+                    logger.error(f"ML batch classification failed: {e}")
+                    new_results = [(email, None) for email in emails_to_process]
+                    results.extend(new_results)
+            else:
+                # Multithreaded batch processing for rule-based and other methods
+                max_workers = min(8, len(emails_to_process))
+                logger.info(f"Using {max_workers} threads for classification")
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all classification tasks
+                    future_to_email = {
+                        executor.submit(self._classify_email_thread_safe, email, method): email
+                        for email in emails_to_process
+                    }
+
+                    # Collect results as they complete
+                    processed_count = 0
+                    for future in as_completed(future_to_email):
+                        email = future_to_email[future]
+                        try:
+                            result = future.result()
+                            results.append((email, result))
+                            if result:
+                                new_classifications += 1
+
+                            processed_count += 1
+                            if processed_count % 10 == 0 or processed_count == len(emails_to_process):
+                                logger.info(f"Processed {processed_count}/{len(emails_to_process)} new emails")
+
+                        except Exception as e:
+                            logger.warning(f"Failed to classify email: {e}")
+                            results.append((email, None))
+
+            # Store new classifications in cache
+            if use_cache:
+                for email, result in results[cached_count:]:  # Only new results
+                    try:
+                        self.cache.store_email(email, result, method)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache email {email.metadata.message_id}: {e}")
 
         # Log classification summary
         successful = sum(1 for _, result in results if result is not None)
-        logger.info(f"Batch classification complete: {successful}/{total_emails} emails classified")
+        logger.info(f"Batch classification complete: {successful}/{total_emails} emails classified "
+                   f"({cached_count} from cache, {new_classifications} newly classified)")
 
         return results
+
+    def classify_batch_from_message_ids(self, gmail_client, message_ids: List[str], method: str = "rule_based", use_cache: bool = True, apply_labels: bool = False, batch_size: int = 100) -> List[Tuple[Email, Optional[ClassificationResult]]]:
+        """
+        Classify emails from message IDs efficiently, checking cache before fetching emails.
+        This is much faster than fetching all emails first then checking cache.
+
+        Args:
+            gmail_client: Gmail client instance
+            message_ids: List of Gmail message IDs
+            method: Classification method to use
+            use_cache: Whether to use cached results and store new classifications
+            apply_labels: Whether to apply labels incrementally after each batch
+            batch_size: Number of emails to process before applying labels (default: 100)
+
+        Returns:
+            List of (Email, ClassificationResult) tuples
+        """
+        results = []
+        total_emails = len(message_ids)
+        cached_count = 0
+        new_classifications = 0
+        total_labeled = 0
+
+        logger.info(f"Starting efficient batch classification of {total_emails} emails using {method} (cache: {use_cache}, apply_labels: {apply_labels})")
+
+        # Filter out already labeled messages if we're applying labels
+        if apply_labels and use_cache:
+            logger.info("Filtering out already-labeled messages...")
+            unlabeled_ids = [mid for mid in message_ids if not self.cache.is_labeled(mid)]
+            already_labeled = len(message_ids) - len(unlabeled_ids)
+            if already_labeled > 0:
+                logger.info(f"Skipping {already_labeled} already-labeled emails")
+                total_labeled = already_labeled
+            message_ids = unlabeled_ids
+
+        if not message_ids:
+            logger.info("All emails are already labeled!")
+            return results
+
+        # Separate cached and uncached message IDs
+        message_ids_to_fetch = []
+        cached_results = []
+
+        if use_cache:
+            logger.info("Checking cache for all message IDs...")
+            for message_id in message_ids:
+                cached_result = self.cache.get_cached_classification(message_id)
+                if cached_result:
+                    # Store cached result with placeholder email (we'll need minimal email data)
+                    category, confidence = cached_result
+                    result = ClassificationResult(
+                        category=category,
+                        confidence=confidence,
+                        method=f"{method}_cached"
+                    )
+                    cached_results.append((message_id, result))
+                    cached_count += 1
+                else:
+                    message_ids_to_fetch.append(message_id)
+        else:
+            message_ids_to_fetch = message_ids
+
+        logger.info(f"Found {cached_count} cached results, need to fetch {len(message_ids_to_fetch)} emails")
+
+        # Fetch only uncached emails
+        emails_to_process = []
+        if message_ids_to_fetch:
+            logger.info(f"Fetching {len(message_ids_to_fetch)} uncached emails from Gmail...")
+            emails_to_process = list(gmail_client.get_messages_batch(message_ids_to_fetch))
+            logger.info(f"Successfully fetched {len(emails_to_process)} emails")
+
+        # Process uncached emails
+        new_results = []
+        if emails_to_process:
+            # Use the existing batch classification logic for new emails
+            if (method == "ml" or method == "random_forest") and self.ml_classifier:
+                try:
+                    new_results = self.ml_classifier.classify_batch(emails_to_process, "random_forest")
+                    new_classifications = len([r for _, r in new_results if r is not None])
+                except Exception as e:
+                    logger.error(f"ML batch classification failed: {e}")
+                    new_results = [(email, None) for email in emails_to_process]
+            else:
+                # Multithreaded batch processing for rule-based and other methods
+                max_workers = min(8, len(emails_to_process))
+                logger.info(f"Using {max_workers} threads for classification")
+
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit all classification tasks
+                    future_to_email = {
+                        executor.submit(self._classify_email_thread_safe, email, method): email
+                        for email in emails_to_process
+                    }
+
+                    # Collect results as they complete
+                    processed_count = 0
+                    for future in as_completed(future_to_email):
+                        email = future_to_email[future]
+                        try:
+                            result = future.result()
+                            new_results.append((email, result))
+                            if result:
+                                new_classifications += 1
+
+                            processed_count += 1
+                            if processed_count % 10 == 0 or processed_count == len(emails_to_process):
+                                logger.info(f"Processed {processed_count}/{len(emails_to_process)} new emails")
+
+                        except Exception as e:
+                            logger.warning(f"Failed to classify email: {e}")
+                            new_results.append((email, None))
+
+            # Store new classifications in cache
+            if use_cache:
+                for email, result in new_results:
+                    try:
+                        self.cache.store_email(email, result, method)
+                    except Exception as e:
+                        logger.warning(f"Failed to cache email {email.metadata.message_id}: {e}")
+
+        # For cached results, only fetch minimal data if we're NOT applying labels
+        # (if applying labels, we don't need to return all the cached emails)
+        if cached_results and not apply_labels:
+            logger.info(f"Fetching minimal email data for {len(cached_results)} cached results...")
+            cached_message_ids = [msg_id for msg_id, _ in cached_results]
+            result_map = {msg_id: result for msg_id, result in cached_results}
+
+            # Fetch emails in batches with progress tracking
+            fetched_count = 0
+            fetch_batch_size = 100
+            for i in range(0, len(cached_message_ids), fetch_batch_size):
+                batch_ids = cached_message_ids[i:i + fetch_batch_size]
+                try:
+                    batch_emails = list(gmail_client.get_messages_batch(batch_ids, format="minimal"))
+                    for email in batch_emails:
+                        result = result_map.get(email.metadata.message_id)
+                        if result:
+                            results.append((email, result))
+                            fetched_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to fetch batch of cached emails: {e}")
+                    # Try individual fetches for this batch
+                    for message_id in batch_ids:
+                        try:
+                            email = gmail_client.get_message(message_id, format="minimal")
+                            result = result_map.get(email.metadata.message_id)
+                            if result:
+                                results.append((email, result))
+                                fetched_count += 1
+                        except Exception as e2:
+                            logger.warning(f"Failed to get minimal email data for cached result {message_id}: {e2}")
+                            cached_count -= 1
+
+                # Progress update
+                progress_pct = (fetched_count / len(cached_results)) * 100
+                logger.info(f"Progress: {fetched_count}/{len(cached_results)} cached emails fetched ({progress_pct:.1f}%)")
+
+        # Add new results
+        results.extend(new_results)
+
+        # Apply labels incrementally if requested
+        if apply_labels:
+            logger.info("Applying labels incrementally...")
+            labels = gmail_client.get_labels()
+            labeled_in_batch = []
+
+            # Process all results (cached + new) in batches
+            all_to_label = [(email, result) for email, result in results if result is not None]
+
+            batch_num = 0
+            for i in range(0, len(all_to_label), batch_size):
+                batch_to_label = all_to_label[i:i + batch_size]
+                batch_num += 1
+
+                logger.info(f"\n{'='*70}")
+                logger.info(f"Processing batch {batch_num}/{(len(all_to_label) + batch_size - 1) // batch_size} ({len(batch_to_label)} emails)")
+                logger.info(f"{'='*70}")
+
+                # Sample emails to show (first 3 in batch)
+                sample_size = min(3, len(batch_to_label))
+
+                for idx, (email, result) in enumerate(batch_to_label):
+                    try:
+                        label_name = result.category
+
+                        # Create label if it doesn't exist
+                        if label_name not in labels:
+                            logger.info(f"Creating label: {label_name}")
+                            gmail_client.create_label(label_name)
+                            labels = gmail_client.get_labels()
+
+                        label_id = labels[label_name]
+                        gmail_client.add_label(email.metadata.message_id, label_id)
+                        labeled_in_batch.append(email.metadata.message_id)
+                        total_labeled += 1
+
+                        # Show sample emails from this batch
+                        if idx < sample_size:
+                            subject = email.headers.subject[:60] + "..." if len(email.headers.subject) > 60 else email.headers.subject
+                            sender = email.headers.from_address[:40] + "..." if len(email.headers.from_address) > 40 else email.headers.from_address
+                            logger.info(f"  ✓ [{idx+1}/{len(batch_to_label)}] {label_name}")
+                            logger.info(f"    From: {sender}")
+                            logger.info(f"    Subject: {subject}")
+
+                    except Exception as e:
+                        logger.warning(f"Failed to apply label to {email.metadata.message_id}: {e}")
+
+                # Mark batch as labeled in cache
+                if labeled_in_batch:
+                    try:
+                        self.cache.batch_mark_labeled(labeled_in_batch)
+                        logger.info(f"\n✓ Batch {batch_num} complete: Labeled {len(labeled_in_batch)} emails and marked in cache")
+                        logger.info(f"  Total progress: {total_labeled}/{len(all_to_label)} emails labeled ({(total_labeled/len(all_to_label)*100):.1f}%)")
+                        if batch_num < (len(all_to_label) + batch_size - 1) // batch_size:
+                            logger.info(f"  Moving to next batch...\n")
+                        labeled_in_batch = []
+                    except Exception as e:
+                        logger.warning(f"Failed to mark batch as labeled in cache: {e}")
+
+            logger.info(f"\n{'='*70}")
+            logger.info(f"🎉 All batches complete! Total labels applied: {total_labeled}/{len(all_to_label)}")
+            logger.info(f"{'='*70}")
+
+        # Log classification summary
+        successful = sum(1 for _, result in results if result is not None)
+        logger.info(f"Efficient batch classification complete: {successful}/{len(message_ids)} emails classified "
+                   f"({cached_count} from cache, {new_classifications} newly classified)")
+
+        if apply_labels:
+            logger.info(f"Labels applied to {total_labeled} emails")
+
+        return results
+
+    def _classify_email_thread_safe(self, email: Email, method: str) -> Optional[ClassificationResult]:
+        """
+        Thread-safe version of classify_email for use in ThreadPoolExecutor.
+
+        Args:
+            email: Email to classify
+            method: Classification method
+
+        Returns:
+            ClassificationResult or None if failed
+        """
+        try:
+            return self.classify_email(email, method)
+        except Exception as e:
+            logger.warning(f"Thread-safe classification failed for email {email.metadata.message_id}: {e}")
+            return None
 
     def _hybrid_classify(self, email: Email) -> Optional[ClassificationResult]:
         """

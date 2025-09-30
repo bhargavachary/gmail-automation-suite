@@ -6,8 +6,10 @@ authentication, email retrieval, labeling, and batch operations.
 """
 
 import pickle
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Iterator
+import threading
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -276,55 +278,171 @@ class GmailClient:
 
     def get_messages_batch(self,
                           message_ids: List[str],
-                          format: str = "full") -> Iterator[Email]:
+                          format: str = "full",
+                          max_workers: int = 1) -> Iterator[Email]:
         """
-        Get multiple messages efficiently using batch requests.
+        Get multiple messages efficiently with progress reporting.
 
         Args:
             message_ids: List of Gmail message IDs
             format: Message format for all messages
+            max_workers: Ignored - kept for API compatibility
 
         Yields:
             Email objects
         """
-        # Process in batches to avoid API limits
-        batch_size = 100
-        total_batches = (len(message_ids) + batch_size - 1) // batch_size
+        total = len(message_ids)
+        logger.info(f"Fetching {total} messages sequentially...")
 
-        for i in range(0, len(message_ids), batch_size):
-            batch_ids = message_ids[i:i + batch_size]
-            batch_num = i // batch_size + 1
-
-            logger.info(f"Processing batch {batch_num}/{total_batches} ({len(batch_ids)} messages)")
-
-            for message_id in batch_ids:
-                try:
-                    email = self.get_message(message_id, format)
+        for idx, message_id in enumerate(message_ids, 1):
+            try:
+                email = self._get_message_with_retry(message_id, format)
+                if email:
                     yield email
-                except GmailClientError as e:
-                    logger.warning(f"Failed to get message {message_id}: {e}")
+
+                # Progress every 50 messages or at milestones
+                if idx % 50 == 0 or idx in [10, 25, 100, 250, 500, 1000]:
+                    progress_pct = (idx / total) * 100
+                    rate = idx / ((idx * 0.35))  # ~0.35s per message estimate
+                    remaining = (total - idx) * 0.35 / 60  # minutes
+                    logger.info(f"Progress: {idx}/{total} ({progress_pct:.1f}%) - ~{remaining:.1f} min remaining")
+
+            except Exception as e:
+                logger.warning(f"Failed to get message {message_id}: {e}")
+                continue
+
+    def _get_message_with_retry(self, message_id: str, format: str = "full") -> Optional[Email]:
+        """
+        Get message with retry logic for handling connection issues.
+
+        Args:
+            message_id: Gmail message ID
+            format: Message format
+
+        Returns:
+            Email object or None if failed
+        """
+        import time
+        import random
+        from googleapiclient.errors import HttpError
+
+        max_retries = 3
+        base_delay = 0.5
+
+        for attempt in range(max_retries):
+            try:
+                return self.get_message(message_id, format)
+            except HttpError as e:
+                if e.resp.status == 429:  # Rate limit
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.debug(f"Rate limit hit for {message_id}, retrying in {delay:.2f}s (attempt {attempt + 1})")
+                    time.sleep(delay)
                     continue
+                elif e.resp.status >= 500:  # Server errors
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                    logger.debug(f"Server error for {message_id}, retrying in {delay:.2f}s (attempt {attempt + 1})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.warning(f"HTTP error {e.resp.status} for {message_id}: {e}")
+                    return None
+            except Exception as e:
+                error_str = str(e).lower()
+                if any(term in error_str for term in ["ssl", "connection", "incompleteread", "nonetype", "timeout", "reset", "broken pipe"]):
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.debug(f"Connection error for {message_id}, retrying in {delay:.2f}s (attempt {attempt + 1}): {e}")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.warning(f"Get message failed for {message_id}: {e}")
+                    return None
+
+        logger.warning(f"Failed to get message {message_id} after {max_retries} attempts")
+        return None
 
     def add_label(self, message_id: str, label_id: str) -> None:
         """
-        Add a label to a message.
+        Add a label to a message with robust error handling and retry logic.
 
         Args:
             message_id: Gmail message ID
             label_id: Gmail label ID
         """
-        try:
-            self.service.users().messages().modify(
-                userId=self.user_id,
-                id=message_id,
-                body={'addLabelIds': [label_id]}
-            ).execute()
+        import time
+        import random
 
-            logger.debug(f"Added label {label_id} to message {message_id}")
+        max_retries = 3
+        base_delay = 0.5
 
-        except HttpError as e:
-            logger.error(f"Failed to add label to message {message_id}: {e}")
-            raise GmailClientError(f"Failed to add label: {e}")
+        for attempt in range(max_retries):
+            try:
+                # First verify the message still exists
+                try:
+                    self.service.users().messages().get(
+                        userId=self.user_id,
+                        id=message_id,
+                        format='minimal'
+                    ).execute()
+                except HttpError as e:
+                    if e.resp.status == 404:
+                        logger.warning(f"Message {message_id} no longer exists, skipping label application")
+                        return
+                    raise e
+
+                # Apply the label
+                self.service.users().messages().modify(
+                    userId=self.user_id,
+                    id=message_id,
+                    body={'addLabelIds': [label_id]}
+                ).execute()
+
+                logger.debug(f"Added label {label_id} to message {message_id}")
+                return
+
+            except HttpError as e:
+                if e.resp.status == 400 and "Precondition check failed" in str(e):
+                    # Message state has changed, wait and retry
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt) + random.uniform(0, 0.5)
+                        logger.debug(f"Precondition failed for {message_id}, retrying in {delay:.2f}s (attempt {attempt + 1})")
+                        time.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(f"Precondition check failed for message {message_id} after {max_retries} attempts - skipping")
+                        return
+                elif e.resp.status == 404:
+                    logger.warning(f"Message {message_id} not found - may have been deleted")
+                    return
+                elif e.resp.status == 429:
+                    # Rate limit - exponential backoff
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.debug(f"Rate limit hit for {message_id}, retrying in {delay:.2f}s (attempt {attempt + 1})")
+                    time.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Failed to add label to message {message_id}: {e}")
+                    raise GmailClientError(f"Failed to add label: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error adding label to message {message_id}: {e}")
+                raise GmailClientError(f"Failed to add label: {e}")
+
+        logger.warning(f"Failed to add label to message {message_id} after {max_retries} attempts")
+
+    def add_labels_batch(self, message_ids: List[str], label_id: str) -> Dict[str, int]:
+        """
+        Add a single label to multiple messages efficiently.
+
+        Args:
+            message_ids: List of Gmail message IDs
+            label_id: Gmail label ID to add
+
+        Returns:
+            Dictionary with success/failure counts
+        """
+        return self.batch_modify_labels(
+            message_ids=message_ids,
+            add_label_ids=[label_id]
+        )
 
     def remove_label(self, message_id: str, label_id: str) -> None:
         """
@@ -350,37 +468,108 @@ class GmailClient:
     def batch_modify_labels(self,
                            message_ids: List[str],
                            add_label_ids: Optional[List[str]] = None,
-                           remove_label_ids: Optional[List[str]] = None) -> None:
+                           remove_label_ids: Optional[List[str]] = None) -> Dict[str, int]:
         """
-        Modify labels for multiple messages in a single API call.
+        Modify labels for multiple messages in batches with robust error handling.
 
         Args:
             message_ids: List of Gmail message IDs
             add_label_ids: Label IDs to add
             remove_label_ids: Label IDs to remove
+
+        Returns:
+            Dictionary with success/failure counts
         """
         if not add_label_ids and not remove_label_ids:
-            return
+            return {'success': 0, 'failed': 0, 'skipped': 0}
 
-        try:
-            body = {'ids': message_ids}
+        import time
+        import random
 
-            if add_label_ids:
-                body['addLabelIds'] = add_label_ids
+        # Process in smaller batches to avoid API limits and reduce failure impact
+        batch_size = 100
+        total_success = 0
+        total_failed = 0
+        total_skipped = 0
 
-            if remove_label_ids:
-                body['removeLabelIds'] = remove_label_ids
+        total_batches = (len(message_ids) + batch_size - 1) // batch_size
 
-            self.service.users().messages().batchModify(
-                userId=self.user_id,
-                body=body
-            ).execute()
+        for i in range(0, len(message_ids), batch_size):
+            batch_ids = message_ids[i:i + batch_size]
+            batch_num = i // batch_size + 1
 
-            logger.info(f"Batch modified labels for {len(message_ids)} messages")
+            logger.info(f"Processing label batch {batch_num}/{total_batches} ({len(batch_ids)} messages)")
 
-        except HttpError as e:
-            logger.error(f"Failed to batch modify labels: {e}")
-            raise GmailClientError(f"Failed to batch modify labels: {e}")
+            # Try batch modification first
+            success = False
+            for attempt in range(3):
+                try:
+                    body = {'ids': batch_ids}
+
+                    if add_label_ids:
+                        body['addLabelIds'] = add_label_ids
+
+                    if remove_label_ids:
+                        body['removeLabelIds'] = remove_label_ids
+
+                    self.service.users().messages().batchModify(
+                        userId=self.user_id,
+                        body=body
+                    ).execute()
+
+                    total_success += len(batch_ids)
+                    logger.debug(f"Batch modified labels for {len(batch_ids)} messages")
+                    success = True
+                    break
+
+                except HttpError as e:
+                    if e.resp.status == 429:  # Rate limit
+                        delay = 0.5 * (2 ** attempt) + random.uniform(0, 1)
+                        logger.debug(f"Rate limit hit for batch {batch_num}, retrying in {delay:.2f}s")
+                        time.sleep(delay)
+                        continue
+                    elif e.resp.status == 400 and "Precondition check failed" in str(e):
+                        # Some messages in batch have changed state, fall back to individual processing
+                        logger.info(f"Precondition failed for batch {batch_num}, processing individually")
+                        break
+                    else:
+                        logger.warning(f"Batch modify failed for batch {batch_num}: {e}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Unexpected error in batch {batch_num}: {e}")
+                    break
+
+            # Fall back to individual processing if batch failed
+            if not success:
+                logger.debug(f"Falling back to individual processing for batch {batch_num}")
+                for message_id in batch_ids:
+                    try:
+                        if add_label_ids:
+                            for label_id in add_label_ids:
+                                self.add_label(message_id, label_id)
+                        if remove_label_ids:
+                            for label_id in remove_label_ids:
+                                self.remove_label(message_id, label_id)
+                        total_success += 1
+                    except Exception as e:
+                        if "no longer exists" in str(e) or "not found" in str(e):
+                            total_skipped += 1
+                        else:
+                            total_failed += 1
+                            logger.warning(f"Failed to modify labels for {message_id}: {e}")
+
+            # Small delay between batches to avoid overwhelming the API
+            if i + batch_size < len(message_ids):
+                time.sleep(0.1)
+
+        result = {
+            'success': total_success,
+            'failed': total_failed,
+            'skipped': total_skipped
+        }
+
+        logger.info(f"Batch labeling complete: {result}")
+        return result
 
     def get_message_count(self, query: str = "") -> int:
         """

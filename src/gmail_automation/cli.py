@@ -28,6 +28,7 @@ def setup_argument_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   gmail-automation classify --max-emails 100 --method hybrid --apply-labels
+  gmail-automation classify --max-emails 0 --method hybrid --apply-labels  # Exhaustive search
   gmail-automation labels --create "Work Projects" --color blue
   gmail-automation filters --create "🏦 Finance & Bills"
   gmail-automation --dry-run filters --create-all
@@ -86,7 +87,7 @@ Examples:
         "--max-emails",
         type=int,
         default=100,
-        help="Maximum number of emails to process (default: 100)"
+        help="Maximum number of emails to process (default: 100, use 0 for exhaustive search)"
     )
     classify_parser.add_argument(
         "--query",
@@ -103,6 +104,22 @@ Examples:
         "--report",
         type=Path,
         help="Save classification report to file"
+    )
+    classify_parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable caching (force reprocessing of all emails)"
+    )
+    classify_parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Show cache statistics before processing"
+    )
+    classify_parser.add_argument(
+        "--threads",
+        type=int,
+        default=4,
+        help="Number of threads to use for parallel processing (default: 4, reduced for API stability)"
     )
 
     # Label management command
@@ -211,6 +228,33 @@ Examples:
         help="Save filter report to file"
     )
 
+    # Cache management command
+    cache_parser = subparsers.add_parser(
+        "cache",
+        help="Manage email classification cache"
+    )
+    cache_parser.add_argument(
+        "--stats",
+        action="store_true",
+        help="Show cache statistics"
+    )
+    cache_parser.add_argument(
+        "--apply-labels",
+        action="store_true",
+        help="Apply labels to all cached classified emails"
+    )
+    cache_parser.add_argument(
+        "--export",
+        type=Path,
+        help="Export cached classifications to JSON file"
+    )
+    cache_parser.add_argument(
+        "--cleanup",
+        type=int,
+        metavar="DAYS",
+        help="Remove cache entries older than DAYS (only labeled emails)"
+    )
+
     # Reset command
     reset_parser = subparsers.add_parser(
         "reset",
@@ -263,29 +307,57 @@ def handle_classify_command(args) -> int:
             config_dir=args.config_dir
         )
 
-        # Initialize classifier with ML models if available
+        # Initialize classifier with ML models and cache
         model_dir = args.config_dir / "backups" / "20250928"
-        classifier = EmailClassifier(config, str(model_dir) if model_dir.exists() else None)
+        cache_dir = args.config_dir / "cache"
+        classifier = EmailClassifier(
+            config,
+            str(model_dir) if model_dir.exists() else None,
+            cache_dir
+        )
 
         # Determine intelligent query based on max_emails and user input
         if args.query is None:
-            # For large batches (1000+), search all emails; for small batches, use unread
-            query = "" if args.max_emails >= 1000 else "is:unread"
+            # For large batches (1000+) or exhaustive search (0), search all emails; for small batches, use unread
+            query = "" if (args.max_emails >= 1000 or args.max_emails == 0) else "is:unread"
         else:
             query = args.query
 
-        print(f"Searching for emails with query: '{query}'")
-        message_ids = gmail_client.search_messages(query, args.max_emails)
+        # Handle exhaustive search (max_emails = 0)
+        max_results = None if args.max_emails == 0 else args.max_emails
+        search_mode = "exhaustive" if args.max_emails == 0 else f"up to {args.max_emails} emails"
+
+        print(f"Searching for emails with query: '{query}' ({search_mode})")
+        message_ids = gmail_client.search_messages(query, max_results)
 
         if not message_ids:
             print("No emails found matching the query.")
             return 0
 
+        # Show cache statistics if requested
+        if hasattr(args, 'cache_stats') and args.cache_stats:
+            cache_stats = classifier.cache.get_classification_stats()
+            print(f"\n📊 Cache Statistics:")
+            print(f"  Total processed emails: {cache_stats.get('total_processed', 0)}")
+            print(f"  Total classified emails: {cache_stats.get('total_classified', 0)}")
+            print(f"  Total labeled emails: {cache_stats.get('total_labeled', 0)}")
+            print(f"  Pending labels: {cache_stats.get('pending_labels', 0)}")
+            print(f"  Classification rate: {cache_stats.get('classification_rate', 0):.1%}")
+            print(f"  Labeling rate: {cache_stats.get('labeling_rate', 0):.1%}")
+
         print(f"Found {len(message_ids)} emails. Starting classification...")
 
-        # Get emails and classify
-        emails = list(gmail_client.get_messages_batch(message_ids))
-        results = classifier.classify_batch(emails, method=args.method)
+        # Use efficient cache-first classification that only fetches uncached emails
+        use_cache = not (hasattr(args, 'no_cache') and args.no_cache)
+        apply_labels = args.apply_labels and not args.dry_run
+        results = classifier.classify_batch_from_message_ids(
+            gmail_client,
+            message_ids,
+            method=args.method,
+            use_cache=use_cache,
+            apply_labels=apply_labels,
+            batch_size=100
+        )
 
         # Generate statistics
         stats = classifier.get_classification_stats(results)
@@ -302,23 +374,9 @@ def handle_classify_command(args) -> int:
             for category, count in stats['category_distribution'].items():
                 print(f"  {category}: {count}")
 
-        # Apply labels if requested
+        # Labels are already applied if args.apply_labels was set (handled in classifier)
         if args.apply_labels and not args.dry_run:
-            print("\nApplying labels...")
-            labels = gmail_client.get_labels()
-
-            for email, result in results:
-                if result:
-                    label_name = result.category
-                    if label_name not in labels:
-                        print(f"Creating label: {label_name}")
-                        gmail_client.create_label(label_name)
-                        labels = gmail_client.get_labels()  # Refresh
-
-                    label_id = labels[label_name]
-                    gmail_client.add_label(email.metadata.message_id, label_id)
-
-            print("Labels applied successfully.")
+            print("\n✓ Labels applied successfully (see logs for details)")
 
         # Save report if requested
         if args.report:
@@ -781,6 +839,116 @@ def handle_reset_command(args) -> int:
         return 1
 
 
+def handle_cache_command(args) -> int:
+    """Handle cache management command."""
+    try:
+        # Initialize cache
+        cache_dir = args.config_dir / "cache"
+        from .core.email_cache import EmailCache
+        cache = EmailCache(cache_dir)
+
+        if args.stats:
+            # Show cache statistics
+            stats = cache.get_classification_stats()
+            print("\n📊 Email Classification Cache Statistics")
+            print("=" * 50)
+            print(f"Total processed emails: {stats.get('total_processed', 0):,}")
+            print(f"Total classified emails: {stats.get('total_classified', 0):,}")
+            print(f"Total labeled emails: {stats.get('total_labeled', 0):,}")
+            print(f"Pending labels: {stats.get('pending_labels', 0):,}")
+            print(f"Classification rate: {stats.get('classification_rate', 0):.1%}")
+            print(f"Labeling rate: {stats.get('labeling_rate', 0):.1%}")
+
+            if stats.get('category_distribution'):
+                print(f"\nCategory Distribution:")
+                for category, count in stats['category_distribution'].items():
+                    print(f"  {category}: {count:,}")
+
+        elif args.apply_labels:
+            # Apply labels to cached classified emails
+            print("Applying labels from cache...")
+
+            # Initialize Gmail client
+            gmail_client = GmailClient(
+                credentials_file=args.credentials,
+                token_file=args.token,
+                config_dir=args.config_dir
+            )
+
+            # Get unlabeled classified emails
+            unlabeled_emails = cache.get_unlabeled_classified_emails()
+            if not unlabeled_emails:
+                print("No unlabeled classified emails found in cache.")
+                return 0
+
+            print(f"Found {len(unlabeled_emails)} emails with pending labels\n")
+
+            # Get current labels
+            labels = gmail_client.get_labels()
+            applied_count = 0
+            total_emails = len(unlabeled_emails)
+
+            for message_id, category, confidence in unlabeled_emails:
+                try:
+                    # Create label if needed
+                    if category not in labels:
+                        print(f"Creating label: {category}")
+                        gmail_client.create_label(category)
+                        labels = gmail_client.get_labels()  # Refresh
+
+                    # Fetch email details for display
+                    try:
+                        message = gmail_client.get_message(message_id)
+                        if message:
+                            email = message  # message is already an Email object
+                            subject = email.headers.subject[:80] + "..." if len(email.headers.subject) > 80 else email.headers.subject
+                            sender = email.headers.from_address[:50] + "..." if len(email.headers.from_address) > 50 else email.headers.from_address
+
+                            # Show progress with email details
+                            print(f"[{applied_count + 1}/{total_emails}] Labeling: {category} (confidence: {confidence:.2f})")
+                            print(f"  From: {sender}")
+                            print(f"  Subject: {subject}")
+                    except Exception as fetch_error:
+                        # If fetch fails, still show progress
+                        print(f"[{applied_count + 1}/{total_emails}] Labeling: {category} (confidence: {confidence:.2f})")
+                        print(f"  Message ID: {message_id}")
+
+                    # Apply label
+                    label_id = labels[category]
+                    gmail_client.add_label(message_id, label_id)
+
+                    # Mark as labeled in cache
+                    cache.mark_labeled(message_id)
+                    applied_count += 1
+
+                except Exception as e:
+                    logger.warning(f"Failed to apply label to {message_id}: {e}")
+                    print(f"  ✗ Failed: {e}")
+
+            print(f"\n✓ Successfully applied labels to {applied_count}/{total_emails} emails")
+
+        elif args.export:
+            # Export cached classifications
+            cache.export_classifications(args.export)
+            print(f"Exported classifications to {args.export}")
+
+        elif args.cleanup:
+            # Cleanup old cache entries
+            deleted_count = cache.cleanup_old_entries(args.cleanup)
+            print(f"Cleaned up {deleted_count} old cache entries (older than {args.cleanup} days)")
+
+        else:
+            print("Please specify an action: --stats, --apply-labels, --export, or --cleanup")
+            return 1
+
+        return 0
+
+    except Exception as e:
+        logger.error(f"Cache command failed: {e}")
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+
 def main() -> int:
     """Main CLI entry point."""
     parser = setup_argument_parser()
@@ -812,6 +980,8 @@ def main() -> int:
         return handle_filters_command(args)
     elif args.command == "reset":
         return handle_reset_command(args)
+    elif args.command == "cache":
+        return handle_cache_command(args)
     else:
         parser.print_help()
         return 1

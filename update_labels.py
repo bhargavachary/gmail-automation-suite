@@ -268,25 +268,53 @@ def main():
     create_template_file(current_labels, template_file)
     print(f"✓ Template created with suggestions")
 
-    # Ask user what to do
+    # Ask user to edit the file
     print("\n" + "=" * 80)
     print("Next Steps:")
-    print("1. Review and edit 'label_updates.txt' with your desired changes")
-    print("2. Run this script again to apply changes")
+    print("1. Edit 'label_updates.txt' with your desired changes")
+    print("2. Save the file and return here")
     print("=" * 80)
 
-    response = input("\nDo you want to apply the suggested changes now? (yes/no/dry-run): ").strip().lower()
+    input("\n📝 Press ENTER when you've finished editing the file...")
 
-    if response == 'yes':
-        updates = parse_update_file(template_file)
+    # Re-read the file and show what will be changed
+    print("\n📖 Reading your changes from label_updates.txt...")
+    updates = parse_update_file(template_file)
+
+    if not updates:
+        print("\n⚠️  No updates found in the file.")
+        print("💡 You can edit 'label_updates.txt' and run this script again anytime.")
+        return 0
+
+    # Display the changes
+    print("\n📋 Proposed Changes:")
+    print("=" * 80)
+
+    for old_name, new_name, color in updates:
+        if old_name not in current_labels:
+            print(f"⚠️  Label not found: {old_name} (will be skipped)")
+            continue
+
+        changes = []
+        if new_name != old_name:
+            changes.append(f"name: {old_name} → {new_name}")
+        if color:
+            changes.append(f"color: {color}")
+
+        if changes:
+            print(f"\n{old_name}:")
+            for change in changes:
+                print(f"  • {change}")
+
+    # Ask for confirmation
+    print("\n" + "=" * 80)
+    response = input("\nType 'confirm' to apply these changes, or 'skip' to exit: ").strip().lower()
+
+    if response == 'confirm':
         apply_updates(gmail_client, updates, dry_run=False)
         print("\n✅ Label updates applied successfully!")
-    elif response == 'dry-run':
-        updates = parse_update_file(template_file)
-        apply_updates(gmail_client, updates, dry_run=True)
-        print("\n💡 This was a dry run. Edit 'label_updates.txt' and run with 'yes' to apply.")
     else:
-        print("\n💡 Edit 'label_updates.txt' and run this script again when ready.")
+        print("\n💡 No changes made. You can edit 'label_updates.txt' and run this script again anytime.")
 
     return 0
 

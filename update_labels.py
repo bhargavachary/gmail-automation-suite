@@ -400,12 +400,9 @@ def update_labels_interactive():
     print("STEP 1: Fetching Current Labels from Gmail")
     print("=" * 80)
 
-    response = input("\n👉 Press ENTER to fetch labels from Gmail (or 'skip' to exit): ").strip().lower()
-    if response == 'skip':
-        print("💡 Exited. Run again when ready.")
-        return 0
+    response = input("\n👉 Press ENTER to fetch labels (or 'skip' to use existing data): ").strip().lower()
 
-    # Initialize Gmail client
+    # Initialize Gmail client (needed for both cases)
     config_dir = Path("data")
     try:
         print("\n🔌 Connecting to Gmail...")
@@ -418,56 +415,70 @@ def update_labels_interactive():
         print(f"❌ Error: {e}")
         return 1
 
-    # Get current labels from server
-    print("📋 Fetching labels from server...")
-    try:
-        current_labels = get_current_labels(gmail_client)
-    except GmailClientError as e:
-        print(f"❌ Error: {e}")
-        return 1
+    if response != 'skip':
+        # Get current labels from server
+        print("📋 Fetching labels from server...")
+        try:
+            current_labels = get_current_labels(gmail_client)
+        except GmailClientError as e:
+            print(f"❌ Error: {e}")
+            return 1
 
-    if not current_labels:
-        print("\n⚠️  No user-created labels found.")
-        return 0
+        if not current_labels:
+            print("\n⚠️  No user-created labels found.")
+            return 0
 
-    print(f"✓ Found {len(current_labels)} label(s)\n")
+        print(f"✓ Found {len(current_labels)} label(s)\n")
 
-    # Display current labels
-    print("Current Labels:")
-    print("-" * 80)
-    for idx, (label_name, details) in enumerate(sorted(current_labels.items()), 1):
-        color = get_color_name(details.get('color', {}))
-        print(f"{idx:2d}. {label_name} (color: {color})")
-    print("-" * 80)
+        # Display current labels
+        print("Current Labels:")
+        print("-" * 80)
+        for idx, (label_name, details) in enumerate(sorted(current_labels.items()), 1):
+            color = get_color_name(details.get('color', {}))
+            print(f"{idx:2d}. {label_name} (color: {color})")
+        print("-" * 80)
+    else:
+        print("⏭️  Skipped fetching. Will use existing label data for updates.")
+        # Still need to get labels for later steps
+        try:
+            current_labels = get_current_labels(gmail_client)
+        except GmailClientError as e:
+            print(f"❌ Error: {e}")
+            return 1
 
     # STEP 2: Generate template
     print("\n" + "=" * 80)
     print("STEP 2: Generate Template with Color Suggestions")
     print("=" * 80)
 
-    response = input("\n👉 Press ENTER to generate template file (or 'skip' to exit): ").strip().lower()
-    if response == 'skip':
-        print("💡 Exited. Run again when ready.")
-        return 0
+    response = input("\n👉 Press ENTER to generate template (or 'skip' to use existing file): ").strip().lower()
 
-    # Show suggestions
-    print("\n💡 Color Suggestions (each label gets a different color):")
-    print("-" * 80)
-    sorted_labels = sorted(current_labels.keys())
-    for idx, label_name in enumerate(sorted_labels):
-        suggestion = suggest_enhancements(label_name)
-        auto_color = COLOR_ROTATION[idx % len(COLOR_ROTATION)]
-        if suggestion['suggested_name'] != label_name:
-            print(f"  {label_name}")
-            print(f"    → {suggestion['suggested_name']} (color: {auto_color})")
-        else:
-            print(f"  {label_name} → {auto_color}")
-
-    # Create template file
     template_file = Path("label_updates.txt")
-    print(f"\n📝 Creating template file: {template_file}")
-    create_template_file(current_labels, template_file)
-    print(f"✓ Template created with suggestions")
+
+    if response != 'skip':
+        # Show suggestions
+        print("\n💡 Color Suggestions (each label gets a different color):")
+        print("-" * 80)
+        sorted_labels = sorted(current_labels.keys())
+        for idx, label_name in enumerate(sorted_labels):
+            suggestion = suggest_enhancements(label_name)
+            auto_color = COLOR_ROTATION[idx % len(COLOR_ROTATION)]
+            if suggestion['suggested_name'] != label_name:
+                print(f"  {label_name}")
+                print(f"    → {suggestion['suggested_name']} (color: {auto_color})")
+            else:
+                print(f"  {label_name} → {auto_color}")
+
+        # Create template file
+        print(f"\n📝 Creating template file: {template_file}")
+        create_template_file(current_labels, template_file)
+        print(f"✓ Template created with suggestions")
+    else:
+        print(f"⏭️  Skipped generation. Using existing {template_file}")
+        if not template_file.exists():
+            print(f"⚠️  Warning: {template_file} not found. Creating it now...")
+            create_template_file(current_labels, template_file)
+            print(f"✓ Template created")
 
     # STEP 3: Edit template
     print("\n" + "=" * 80)
@@ -481,7 +492,9 @@ def update_labels_interactive():
     print("  • Leave 'color' empty to keep current color")
     print("  • Save the file when done")
 
-    input("\n👉 Press ENTER after you've finished editing the file (or 'skip' to exit): ").strip().lower()
+    response = input("\n👉 Press ENTER after editing (or 'skip' to use file as-is): ").strip().lower()
+    if response == 'skip':
+        print("⏭️  Skipped editing step. Using file as-is.")
 
     # STEP 4: Review changes
     print("\n" + "=" * 80)
@@ -538,9 +551,9 @@ def update_labels_interactive():
     print("STEP 5: Apply Changes")
     print("=" * 80)
 
-    response = input("\n👉 Type 'confirm' to apply changes, or 'skip' to exit: ").strip().lower()
+    response = input("\n👉 Type 'confirm' to apply changes, or 'skip' to exit without applying: ").strip().lower()
 
-    if response == 'confirm':
+    if response == 'confirm' or response == 'yes':
         # Create backup before making changes
         print("\n💾 Creating backup of current labels...")
         backup_file = backup_labels(current_labels)

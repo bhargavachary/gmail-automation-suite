@@ -118,6 +118,63 @@ def export_filters_to_file(filters: List[Dict], output_file: Path, labels: Dict[
             f.write("\n" + "=" * 80 + "\n\n")
 
 
+def analyze_filter_differences(filters: List[Dict], config: Config, labels: Dict[str, str]) -> Dict:
+    """
+    Analyze differences between Gmail filters and config rules.
+
+    Returns dict with:
+        - filters_by_category: filters grouped by category
+        - config_domains_by_category: domains from config
+        - missing_in_gmail: domains in config but no filter
+        - extra_in_gmail: filters not matching config
+    """
+    analysis = {
+        'filters_by_category': {},
+        'config_domains_by_category': {},
+        'missing_in_gmail': {},
+        'extra_in_gmail': [],
+        'total_filters': len(filters),
+        'total_config_rules': 0
+    }
+
+    # Group filters by category (based on label action)
+    for filter_obj in filters:
+        actions = filter_obj.get('action', {})
+        criteria = filter_obj.get('criteria', {})
+
+        # Get label from actions
+        label_ids = actions.get('addLabelIds', [])
+        if label_ids:
+            for label_id in label_ids:
+                label_name = labels.get(label_id, 'Unknown')
+                if label_name not in analysis['filters_by_category']:
+                    analysis['filters_by_category'][label_name] = []
+                analysis['filters_by_category'][label_name].append(criteria)
+
+    # Get domains from config
+    for category_name, category_config in config.categories.items():
+        domains = category_config.domains
+        all_domains = []
+        all_domains.extend(domains.get('high_confidence', []))
+        all_domains.extend(domains.get('medium_confidence', []))
+
+        analysis['config_domains_by_category'][category_name] = all_domains
+        analysis['total_config_rules'] += len(all_domains)
+
+        # Find missing domains (in config but not in Gmail)
+        existing_domains = set()
+        for filter_criteria in analysis['filters_by_category'].get(category_name, []):
+            from_field = filter_criteria.get('from', '')
+            if from_field:
+                existing_domains.add(from_field)
+
+        missing = set(all_domains) - existing_domains
+        if missing:
+            analysis['missing_in_gmail'][category_name] = sorted(list(missing))
+
+    return analysis
+
+
 def read_filters_command():
     """Read and display current filters from Gmail."""
     print("=" * 80)
@@ -177,6 +234,61 @@ def read_filters_command():
 
     print("\n" + "-" * 80)
     print(f"\nTotal: {len(filters)} filter(s)")
+
+    # Load config and compare
+    print("\n" + "=" * 80)
+    print("📊 Comparing with Configuration Rules")
+    print("=" * 80)
+
+    try:
+        print("\n📖 Loading configuration from data/...")
+        config = Config(config_dir=config_dir)
+        print(f"✓ Loaded {len(config.categories)} categories from config")
+
+        # Analyze differences
+        analysis = analyze_filter_differences(filters, config, label_id_to_name)
+
+        print("\n📋 Analysis Results:")
+        print("-" * 80)
+        print(f"Total Gmail filters: {analysis['total_filters']}")
+        print(f"Total config rules: {analysis['total_config_rules']}")
+
+        # Show breakdown by category
+        print("\n📁 Breakdown by Category:")
+        for category_name in sorted(config.categories.keys()):
+            gmail_count = len(analysis['filters_by_category'].get(category_name, []))
+            config_count = len(analysis['config_domains_by_category'].get(category_name, []))
+
+            status = "✓" if gmail_count == config_count else "⚠️"
+            print(f"\n  {status} {category_name}:")
+            print(f"      Gmail filters: {gmail_count}")
+            print(f"      Config rules: {config_count}")
+
+            # Show missing domains
+            if category_name in analysis['missing_in_gmail']:
+                missing = analysis['missing_in_gmail'][category_name]
+                print(f"      Missing in Gmail: {len(missing)} domain(s)")
+                if len(missing) <= 3:
+                    for domain in missing:
+                        print(f"        - {domain}")
+                else:
+                    for domain in missing[:3]:
+                        print(f"        - {domain}")
+                    print(f"        ... and {len(missing) - 3} more")
+
+        # Summary
+        total_missing = sum(len(v) for v in analysis['missing_in_gmail'].values())
+        if total_missing > 0:
+            print("\n" + "=" * 80)
+            print(f"⚠️  Summary: {total_missing} rule(s) from config are missing in Gmail")
+            print("💡 Run with --update to sync configuration to Gmail")
+        else:
+            print("\n" + "=" * 80)
+            print("✅ All config rules are present in Gmail!")
+
+    except ConfigurationError as e:
+        print(f"\n⚠️  Could not load config: {e}")
+        print("💡 Comparison skipped")
 
     # Ask to export
     response = input("\n💾 Export to file? (yes/no): ").strip().lower()

@@ -264,17 +264,44 @@ def read_filters_command():
             print(f"      Gmail filters: {gmail_count}")
             print(f"      Config rules: {config_count}")
 
+            # Get config details for this category
+            category_config = config.categories.get(category_name)
+            if category_config:
+                high_domains = category_config.domains.get('high_confidence', [])
+                medium_domains = category_config.domains.get('medium_confidence', [])
+
+                print(f"      Config breakdown:")
+                print(f"        • High confidence: {len(high_domains)} domain(s)")
+                print(f"        • Medium confidence: {len(medium_domains)} domain(s)")
+
+                # Show sample domains from config
+                all_config_domains = analysis['config_domains_by_category'].get(category_name, [])
+                if all_config_domains:
+                    print(f"      Sample config domains:")
+                    for domain in all_config_domains[:3]:
+                        # Check if this domain exists in Gmail
+                        existing_domains = set()
+                        for filter_criteria in analysis['filters_by_category'].get(category_name, []):
+                            from_field = filter_criteria.get('from', '')
+                            if from_field:
+                                existing_domains.add(from_field)
+
+                        status_icon = "✓" if domain in existing_domains else "✗"
+                        print(f"        {status_icon} {domain}")
+                    if len(all_config_domains) > 3:
+                        print(f"        ... and {len(all_config_domains) - 3} more")
+
             # Show missing domains
             if category_name in analysis['missing_in_gmail']:
                 missing = analysis['missing_in_gmail'][category_name]
-                print(f"      Missing in Gmail: {len(missing)} domain(s)")
-                if len(missing) <= 3:
+                print(f"      ⚠️  Missing in Gmail: {len(missing)} domain(s)")
+                if len(missing) <= 5:
                     for domain in missing:
-                        print(f"        - {domain}")
+                        print(f"        ✗ {domain}")
                 else:
-                    for domain in missing[:3]:
-                        print(f"        - {domain}")
-                    print(f"        ... and {len(missing) - 3} more")
+                    for domain in missing[:5]:
+                        print(f"        ✗ {domain}")
+                    print(f"        ... and {len(missing) - 5} more")
 
         # Summary
         total_missing = sum(len(v) for v in analysis['missing_in_gmail'].values())

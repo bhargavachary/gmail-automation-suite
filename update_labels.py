@@ -219,6 +219,15 @@ def main():
     print("=" * 80)
     print("Gmail Label Update Tool")
     print("=" * 80)
+    print("\n📖 Workflow:")
+    print("  1. Fetch your current Gmail labels and colors from server")
+    print("  2. Generate template file with auto-assigned colors")
+    print("  3. You edit the template file with your preferences")
+    print("  4. Review proposed changes")
+    print("  5. Confirm to apply or skip to exit")
+    print("=" * 80)
+
+    input("\n👉 Press ENTER to start fetching labels from Gmail...")
 
     # Initialize Gmail client
     config_dir = Path("data")
@@ -232,22 +241,22 @@ def main():
         print(f"❌ Error: {e}")
         return 1
 
-    # Get current labels
-    print("\n📋 Fetching current labels...")
+    # Get current labels from server
+    print("\n📋 Fetching current labels from Gmail server...")
     current_labels = get_current_labels(gmail_client)
 
     if not current_labels:
         print("No user-created labels found.")
         return 0
 
-    print(f"Found {len(current_labels)} label(s)\n")
+    print(f"✓ Found {len(current_labels)} label(s)\n")
 
-    # Display current labels
-    print("Current Labels:")
+    # Display current labels with actual colors from server
+    print("Current Labels (from Gmail server):")
     print("-" * 80)
     for label_name, details in sorted(current_labels.items()):
         color = get_color_name(details.get('color', {}))
-        print(f"  {label_name} (color: {color})")
+        print(f"  {label_name} (current color: {color})")
 
     # Show suggestions with auto-assigned colors
     print("\n💡 Suggested Enhancements (each label gets a different color):")
@@ -260,22 +269,24 @@ def main():
             print(f"  {label_name}")
             print(f"    → {suggestion['suggested_name']} (color: {auto_color})")
         else:
-            print(f"  {label_name} (color: {auto_color})")
+            print(f"  {label_name} (suggested color: {auto_color})")
 
     # Create template file
     template_file = Path("label_updates.txt")
     print(f"\n📝 Creating template file: {template_file}")
     create_template_file(current_labels, template_file)
-    print(f"✓ Template created with suggestions")
+    print(f"✓ Template created with suggestions and auto-assigned colors")
 
     # Ask user to edit the file
     print("\n" + "=" * 80)
-    print("Next Steps:")
-    print("1. Edit 'label_updates.txt' with your desired changes")
-    print("2. Save the file and return here")
+    print("📝 Edit 'label_updates.txt' with your preferences:")
+    print("  • Format: old_name | new_name | color")
+    print("  • Available colors: red, orange, yellow, green, teal, blue, purple, pink, brown, gray")
+    print("  • Keep 'new_name' same as 'old_name' if you only want to change color")
+    print("  • Leave 'color' empty to keep current color")
     print("=" * 80)
 
-    input("\n📝 Press ENTER when you've finished editing the file...")
+    input("\n👉 Press ENTER after you've finished editing the file...")
 
     # Re-read the file and show what will be changed
     print("\n📖 Reading your changes from label_updates.txt...")

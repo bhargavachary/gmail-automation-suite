@@ -27,18 +27,19 @@ from src.gmail_automation.core.gmail_client import GmailClient, GmailClientError
 from src.gmail_automation.core.config import Config
 
 
-# Enhanced color palette with Gmail-supported colors
+# Gmail API approved color palette
+# Colors must use predefined hex codes from Gmail's allowed palette
 COLOR_PALETTE = {
-    "red": {"textColor": "#ffffff", "backgroundColor": "#db4437"},
-    "orange": {"textColor": "#ffffff", "backgroundColor": "#f4b400"},
-    "yellow": {"textColor": "#000000", "backgroundColor": "#fbbc04"},
-    "green": {"textColor": "#ffffff", "backgroundColor": "#0f9d58"},
-    "teal": {"textColor": "#ffffff", "backgroundColor": "#00bcd4"},
-    "blue": {"textColor": "#ffffff", "backgroundColor": "#4285f4"},
-    "purple": {"textColor": "#ffffff", "backgroundColor": "#ab47bc"},
-    "pink": {"textColor": "#ffffff", "backgroundColor": "#e91e63"},
-    "brown": {"textColor": "#ffffff", "backgroundColor": "#795548"},
-    "gray": {"textColor": "#ffffff", "backgroundColor": "#9e9e9e"},
+    "red": {"textColor": "#ffffff", "backgroundColor": "#cc3a21"},
+    "orange": {"textColor": "#000000", "backgroundColor": "#ffad47"},
+    "yellow": {"textColor": "#000000", "backgroundColor": "#fad165"},
+    "green": {"textColor": "#ffffff", "backgroundColor": "#16a766"},
+    "teal": {"textColor": "#ffffff", "backgroundColor": "#43d692"},
+    "blue": {"textColor": "#ffffff", "backgroundColor": "#4a86e8"},
+    "purple": {"textColor": "#ffffff", "backgroundColor": "#a479e2"},
+    "pink": {"textColor": "#ffffff", "backgroundColor": "#f691b3"},
+    "brown": {"textColor": "#ffffff", "backgroundColor": "#ac2b16"},
+    "gray": {"textColor": "#ffffff", "backgroundColor": "#666666"},
 }
 
 # Color rotation order for automatic assignment
@@ -133,14 +134,35 @@ def create_template_file(current_labels: Dict[str, Dict], output_file: Path):
 
 
 def get_color_name(color_config: Dict) -> str:
-    """Get color name from color configuration."""
+    """
+    Get color name from color configuration.
+
+    Matches Gmail API hex codes to friendly color names.
+    """
     if not color_config:
         return "default"
 
     bg = color_config.get('backgroundColor', '').lower()
+
+    # Exact match first
     for name, config in COLOR_PALETTE.items():
         if config['backgroundColor'].lower() == bg:
             return name
+
+    # Check if it's a Gmail palette color
+    gmail_colors = {
+        "#000000": "black", "#434343": "dark gray", "#666666": "gray",
+        "#999999": "light gray", "#cccccc": "very light gray", "#efefef": "off white",
+        "#f3f3f3": "near white", "#ffffff": "white",
+        "#fb4c2f": "coral red", "#ffad47": "orange", "#fad165": "yellow",
+        "#16a766": "green", "#43d692": "teal", "#4a86e8": "blue",
+        "#a479e2": "purple", "#f691b3": "pink",
+        "#cc3a21": "red", "#ac2b16": "brown",
+    }
+
+    if bg in gmail_colors:
+        return gmail_colors[bg]
+
     return "custom"
 
 

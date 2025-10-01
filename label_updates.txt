@@ -1,0 +1,34 @@
+# Gmail Label Update Configuration
+# Format: old_name | new_name | color
+# Available colors: red, orange, yellow, green, teal, blue, purple, pink, brown, gray
+# Lines starting with # are ignored
+# Leave 'new_name' empty (or same as old) to keep current name
+# Leave 'color' empty to keep current color
+
+================================================================================
+
+# Example 1: Update both name and color
+# Current: Finance & Bills
+# Suggested: 💰 Finance & Bills (color: green)
+Finance & Bills | 💰 Finance & Bills | green
+
+# Example 2: Keep name, only change color
+# Current: Work Projects
+# Suggested: 💼 Work & Professional (color: blue)
+Work Projects | Work Projects | blue
+
+# Example 3: Only change name, keep current color
+# Current: Shopping
+# Suggested: 🛒 Shopping & E-commerce (color: orange)
+Shopping | 🛒 Shopping & E-commerce |
+
+# Example 4: Keep everything as-is (will be skipped)
+# Current: Personal
+# Suggested: 📁 Personal (color: blue)
+Personal | Personal |
+
+================================================================================
+
+# Add your label updates below this line
+# Format: old_name | new_name | color
+

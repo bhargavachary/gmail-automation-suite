@@ -126,21 +126,26 @@ def analyze_filter_differences(filters: List[Dict], config: Config, labels: Dict
         - filters_by_category: filters grouped by category
         - config_domains_by_category: domains from config
         - missing_in_gmail: domains in config but no filter
-        - extra_in_gmail: filters not matching config
+        - contradictions: domains that have different labels in Gmail vs config
+        - domain_to_filter_id: mapping of domains to their filter IDs
     """
     analysis = {
         'filters_by_category': {},
         'config_domains_by_category': {},
         'missing_in_gmail': {},
-        'extra_in_gmail': [],
+        'contradictions': {},  # domain -> {'gmail_category': X, 'config_category': Y, 'filter_id': Z}
+        'domain_to_filter_id': {},  # domain -> filter_id
+        'domain_to_category_gmail': {},  # domain -> category name in Gmail
         'total_filters': len(filters),
         'total_config_rules': 0
     }
 
     # Group filters by category (based on label action)
+    # Also track which domain maps to which category
     for filter_obj in filters:
         actions = filter_obj.get('action', {})
         criteria = filter_obj.get('criteria', {})
+        filter_id = filter_obj.get('id', 'unknown')
 
         # Get label from actions
         label_ids = actions.get('addLabelIds', [])
@@ -151,7 +156,13 @@ def analyze_filter_differences(filters: List[Dict], config: Config, labels: Dict
                     analysis['filters_by_category'][label_name] = []
                 analysis['filters_by_category'][label_name].append(criteria)
 
-    # Get domains from config
+                # Track domain -> category mapping
+                from_field = criteria.get('from', '')
+                if from_field:
+                    analysis['domain_to_category_gmail'][from_field] = label_name
+                    analysis['domain_to_filter_id'][from_field] = filter_id
+
+    # Get domains from config and check for contradictions
     for category_name, category_config in config.categories.items():
         domains = category_config.domains
         all_domains = []
@@ -171,6 +182,17 @@ def analyze_filter_differences(filters: List[Dict], config: Config, labels: Dict
         missing = set(all_domains) - existing_domains
         if missing:
             analysis['missing_in_gmail'][category_name] = sorted(list(missing))
+
+        # Check for contradictions: domain exists but with different category
+        for domain in all_domains:
+            gmail_category = analysis['domain_to_category_gmail'].get(domain)
+            if gmail_category and gmail_category != category_name:
+                # Contradiction found!
+                analysis['contradictions'][domain] = {
+                    'gmail_category': gmail_category,
+                    'config_category': category_name,
+                    'filter_id': analysis['domain_to_filter_id'].get(domain)
+                }
 
     return analysis
 
@@ -332,15 +354,48 @@ def read_filters_command():
             else:
                 print(f"\n      ✅ DIFFERENCE - All config rules are active in Gmail!")
 
+        # Show contradictions
+        if analysis['contradictions']:
+            print("\n" + "=" * 80)
+            print("⚠️  CONTRADICTIONS DETECTED")
+            print("=" * 80)
+            print(f"\nFound {len(analysis['contradictions'])} domain(s) with conflicting labels:")
+            print("These domains have DIFFERENT categories in Gmail vs config:\n")
+
+            for domain, conflict in sorted(analysis['contradictions'].items()):
+                print(f"  ⚠️  {domain}")
+                print(f"      Gmail has:   '{conflict['gmail_category']}'")
+                print(f"      Config says: '{conflict['config_category']}'")
+                print(f"      Filter ID: {conflict['filter_id']}")
+                print()
+
+            print("=" * 80)
+            print("💡 When you run --update, you'll be asked to:")
+            print("   • OVERRIDE: Delete Gmail filter and create new one with config category")
+            print("   • SKIP: Keep Gmail filter as-is, ignore config for this domain")
+
         # Summary
         total_missing = sum(len(v) for v in analysis['missing_in_gmail'].values())
+        contradictions_count = len(analysis['contradictions'])
+
+        print("\n" + "=" * 80)
+        print("📊 SUMMARY")
+        print("=" * 80)
+
         if total_missing > 0:
-            print("\n" + "=" * 80)
-            print(f"⚠️  Summary: {total_missing} rule(s) from config are missing in Gmail")
-            print("💡 Run with --update to sync configuration to Gmail")
+            print(f"⚠️  {total_missing} rule(s) from config are missing in Gmail")
         else:
-            print("\n" + "=" * 80)
-            print("✅ All config rules are present in Gmail!")
+            print(f"✅ All config rules are present in Gmail")
+
+        if contradictions_count > 0:
+            print(f"⚠️  {contradictions_count} contradiction(s) found - same domain, different category")
+        else:
+            print(f"✅ No contradictions - all domains have matching categories")
+
+        if total_missing > 0 or contradictions_count > 0:
+            print("\n💡 Run with --update to sync configuration to Gmail")
+        else:
+            print("\n🎉 Everything is in sync!")
 
     except ConfigurationError as e:
         print(f"\n⚠️  Could not load config: {e}")
@@ -357,9 +412,16 @@ def read_filters_command():
 
 
 def create_filters_from_config(gmail_client: GmailClient, config: Config,
+                                contradictions: Dict = None,
                                 dry_run: bool = False) -> Tuple[int, int]:
     """
     Create filters from configuration file.
+
+    Args:
+        gmail_client: Gmail client instance
+        config: Configuration object
+        contradictions: Dict of contradicting domains with resolution strategy
+        dry_run: If True, only preview changes
 
     Returns:
         Tuple of (success_count, failure_count)
@@ -369,9 +431,11 @@ def create_filters_from_config(gmail_client: GmailClient, config: Config,
 
     success_count = 0
     failure_count = 0
+    skipped_count = 0
 
     # Get or create labels
     labels = gmail_client.get_labels()
+    contradictions = contradictions or {}
 
     for category_name, category_config in config.categories.items():
         print(f"\n📁 Category: {category_name}")
@@ -392,30 +456,67 @@ def create_filters_from_config(gmail_client: GmailClient, config: Config,
 
         label_id = labels.get(category_name)
 
-        # Create filters from domains
+        # Get domains and filter out skipped contradictions
         domains = category_config.domains
         high_domains = domains.get('high_confidence', [])
         medium_domains = domains.get('medium_confidence', [])
+        all_domains = high_domains + medium_domains
 
-        print(f"  High confidence domains: {len(high_domains)}")
-        print(f"  Medium confidence domains: {len(medium_domains)}")
+        # Filter out domains based on contradiction resolution
+        domains_to_create = []
+        domains_to_skip = []
+
+        for domain in all_domains:
+            if domain in contradictions:
+                if contradictions[domain]['action'] == 'override':
+                    domains_to_create.append(domain)
+                    # Need to delete old filter first
+                    if not dry_run:
+                        old_filter_id = contradictions[domain]['filter_id']
+                        try:
+                            gmail_client.delete_filter(old_filter_id)
+                            print(f"  🗑️  Deleted old filter for {domain}")
+                        except Exception as e:
+                            print(f"  ⚠️  Could not delete old filter for {domain}: {e}")
+                elif contradictions[domain]['action'] == 'skip':
+                    domains_to_skip.append(domain)
+                    skipped_count += 1
+            else:
+                domains_to_create.append(domain)
+
+        print(f"  Domains to process: {len(domains_to_create)}")
+        if domains_to_skip:
+            print(f"  Domains skipped (user choice): {len(domains_to_skip)}")
 
         if dry_run:
-            print(f"  Would create {len(high_domains) + len(medium_domains)} domain-based filters")
+            print(f"  Would create {len(domains_to_create)} domain-based filters")
         else:
-            # Create filters
-            try:
-                created_filters = gmail_client.create_category_filters(
-                    category_name, category_config, label_id
-                )
-                success_count += len(created_filters)
-                print(f"  ✓ Created {len(created_filters)} filters")
-                time.sleep(0.2)  # Rate limiting
-            except Exception as e:
-                print(f"  ✗ Failed to create filters: {e}")
-                failure_count += 1
+            # Create filters for non-skipped domains
+            if domains_to_create:
+                try:
+                    # We need to create filters manually for each domain since we filtered some out
+                    for domain in domains_to_create:
+                        filter_criteria = {'from': domain}
+                        filter_action = {'addLabelIds': [label_id]}
+
+                        gmail_client.service.users().settings().filters().create(
+                            userId='me',
+                            body={
+                                'criteria': filter_criteria,
+                                'action': filter_action
+                            }
+                        ).execute()
+
+                    success_count += len(domains_to_create)
+                    print(f"  ✓ Created {len(domains_to_create)} filters")
+                    time.sleep(0.2)  # Rate limiting
+                except Exception as e:
+                    print(f"  ✗ Failed to create filters: {e}")
+                    failure_count += 1
 
     print(f"\n{'Would create' if dry_run else 'Created'} {success_count} filter(s)")
+    if skipped_count > 0:
+        print(f"Skipped: {skipped_count} filter(s) (due to contradictions)")
     if failure_count > 0:
         print(f"Failed: {failure_count} operation(s)")
 
@@ -429,12 +530,13 @@ def update_filters_interactive():
     print("=" * 80)
 
     # Step 1: Explain workflow
-    print("\n📖 This tool will guide you through 5 steps:")
+    print("\n📖 This tool will guide you through 6 steps:")
     print("  Step 1: Fetch current filters from Gmail")
     print("  Step 2: Export filters to readable text file")
     print("  Step 3: Load rule-based configuration")
-    print("  Step 4: Preview filters to be created")
-    print("  Step 5: Apply changes with backup")
+    print("  Step 4: Check for contradictions and resolve")
+    print("  Step 5: Preview filters to be created")
+    print("  Step 6: Apply changes with backup")
     print("=" * 80)
 
     response = input("\n👉 Ready to start? (yes/no): ").strip().lower()
@@ -530,9 +632,58 @@ def update_filters_interactive():
         print(f"❌ Error loading config: {e}")
         return 1
 
-    # STEP 4: Preview filters
+    # STEP 4: Check for contradictions and resolve
     print("\n" + "=" * 80)
-    print("STEP 4: Preview Filters to Create")
+    print("STEP 4: Check for Contradictions")
+    print("=" * 80)
+
+    # Analyze for contradictions
+    labels_dict = gmail_client.get_labels()
+    label_id_to_name = {v: k for k, v in labels_dict.items()}
+    analysis = analyze_filter_differences(current_filters, config, label_id_to_name)
+
+    contradiction_resolutions = {}
+
+    if analysis['contradictions']:
+        print(f"\n⚠️  Found {len(analysis['contradictions'])} contradiction(s)!")
+        print("These domains have DIFFERENT categories in Gmail vs config:\n")
+
+        for domain, conflict in sorted(analysis['contradictions'].items()):
+            print(f"  ⚠️  {domain}")
+            print(f"      Gmail has:   '{conflict['gmail_category']}'")
+            print(f"      Config says: '{conflict['config_category']}'")
+            print()
+
+            # Ask user for each contradiction
+            while True:
+                response = input(f"      How to handle {domain}? (override/skip): ").strip().lower()
+                if response in ['override', 'skip']:
+                    contradiction_resolutions[domain] = {
+                        'action': response,
+                        'filter_id': conflict['filter_id'],
+                        'gmail_category': conflict['gmail_category'],
+                        'config_category': conflict['config_category']
+                    }
+                    if response == 'override':
+                        print(f"      ✓ Will delete Gmail filter and create new one for '{conflict['config_category']}'")
+                    else:
+                        print(f"      ⏭️  Will keep Gmail filter for '{conflict['gmail_category']}', skip config rule")
+                    print()
+                    break
+                else:
+                    print("      Please enter 'override' or 'skip'")
+
+        print("=" * 80)
+        override_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'override')
+        skip_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'skip')
+        print(f"Resolution summary: {override_count} override(s), {skip_count} skip(s)")
+    else:
+        print("\n✅ No contradictions found!")
+        print("All existing filters align with config rules.")
+
+    # STEP 5: Preview filters
+    print("\n" + "=" * 80)
+    print("STEP 5: Preview Filters to Create")
     print("=" * 80)
 
     response = input("\n👉 Press ENTER to preview (or 'skip' to final step): ").strip().lower()
@@ -542,33 +693,51 @@ def update_filters_interactive():
         print("-" * 80)
 
         total_filters = 0
+        skipped_filters = 0
+
         for category_name, category_config in list(config.categories.items())[:3]:
             domains = category_config.domains
+            all_domains = domains.get('high_confidence', []) + domains.get('medium_confidence', [])
+
+            # Count skipped domains
+            category_skipped = sum(1 for d in all_domains if d in contradiction_resolutions and contradiction_resolutions[d]['action'] == 'skip')
+
             high_count = len(domains.get('high_confidence', []))
             medium_count = len(domains.get('medium_confidence', []))
-            total = high_count + medium_count
+            total = high_count + medium_count - category_skipped
             total_filters += total
+            skipped_filters += category_skipped
 
             print(f"\n{category_name}:")
             print(f"  • High confidence domains: {high_count}")
             print(f"  • Medium confidence domains: {medium_count}")
-            print(f"  • Total filters: {total}")
+            if category_skipped > 0:
+                print(f"  • Skipped (contradictions): {category_skipped}")
+                print(f"  • Will create: {total}")
+            else:
+                print(f"  • Total filters: {total}")
 
         if len(config.categories) > 3:
             remaining = len(config.categories) - 3
             print(f"\n... and {remaining} more categories")
 
         print(f"\n{'=' * 80}")
-        print(f"Estimated total filters to create: {total_filters}+")
+        print(f"Estimated total filters to create: {total_filters}")
+        if skipped_filters > 0:
+            print(f"Filters to skip (user choice): {skipped_filters}")
     else:
         print("⏭️  Skipped preview.")
 
-    # STEP 5: Apply changes
+    # STEP 6: Apply changes
     print("\n" + "=" * 80)
-    print("STEP 5: Create Filters from Configuration")
+    print("STEP 6: Create Filters from Configuration")
     print("=" * 80)
     print("\n⚠️  Warning: This will create new filters based on your configuration.")
-    print("💡 Tip: Existing filters will not be modified or deleted.")
+    if contradiction_resolutions:
+        override_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'override')
+        if override_count > 0:
+            print(f"⚠️  Will delete {override_count} existing filter(s) and replace with config rules.")
+    print("💡 Tip: A backup will be created before any changes.")
 
     response = input("\n👉 Type 'confirm' to create filters, or 'skip' to exit: ").strip().lower()
 
@@ -581,16 +750,28 @@ def update_filters_interactive():
         with open(backup_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
-                'filters': current_filters
+                'filters': current_filters,
+                'contradiction_resolutions': contradiction_resolutions
             }, f, indent=2, ensure_ascii=False)
         print(f"✓ Backup saved to: {backup_file}")
 
-        # Create filters
-        success, failure = create_filters_from_config(gmail_client, config, dry_run=False)
+        # Create filters with contradiction resolutions
+        success, failure = create_filters_from_config(
+            gmail_client, config,
+            contradictions=contradiction_resolutions,
+            dry_run=False
+        )
 
         if failure == 0:
             print("\n✅ All filters created successfully!")
             print(f"💾 Backup available at: {backup_file}")
+            if contradiction_resolutions:
+                override_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'override')
+                skip_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'skip')
+                if override_count > 0:
+                    print(f"🔄 Overridden {override_count} conflicting filter(s)")
+                if skip_count > 0:
+                    print(f"⏭️  Skipped {skip_count} conflicting filter(s)")
         else:
             print(f"\n⚠️  Completed with {failure} failure(s)")
             print(f"💾 You can review backup: {backup_file}")

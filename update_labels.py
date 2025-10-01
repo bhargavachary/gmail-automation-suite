@@ -4,8 +4,16 @@ Label Update Script for Gmail Automation Suite.
 
 Allows users to review current labels, get enhancement suggestions,
 and update label names and colors via a simple text file interface.
+
+Usage:
+    python update_labels.py [--help] [--read] [--update]
+
+    --help      Show this help message
+    --read      Read and display current labels from Gmail
+    --update    Update labels step-by-step (interactive)
 """
 
+import argparse
 import json
 import sys
 import time
@@ -268,24 +276,45 @@ def apply_updates(gmail_client: GmailClient, updates: List[Tuple[str, str, str]]
     return success_count, failure_count
 
 
-def main():
-    """Main entry point."""
+def show_help():
+    """Display help information."""
     print("=" * 80)
-    print("Gmail Label Update Tool")
+    print("Gmail Label Update Tool - Help")
     print("=" * 80)
-    print("\n📖 Workflow:")
-    print("  1. Fetch your current Gmail labels and colors from server")
-    print("  2. Generate template file with auto-assigned colors")
-    print("  3. You edit the template file with your preferences")
-    print("  4. Review proposed changes")
-    print("  5. Confirm to apply or skip to exit")
+    print("\n📖 Usage:")
+    print("  python update_labels.py [--help] [--read] [--update]")
+    print("\n📋 Commands:")
+    print("  --help      Show this help message and exit")
+    print("  --read      Read and display current labels from Gmail server")
+    print("  --update    Update labels step-by-step (interactive workflow)")
+    print("\n🎨 Available Colors:")
+    print("  ", ", ".join(COLOR_ROTATION))
+    print("\n📝 File Format (label_updates.txt):")
+    print("  old_name | new_name | color")
+    print("\n💡 Examples:")
+    print("  Finance & Bills | 💰 Finance & Bills | green")
+    print("  Work Projects | 💼 Work Projects | blue")
+    print("  Shopping | Shopping | orange  # Only change color")
+    print("\n🔄 Workflow:")
+    print("  1. Run with --update to start interactive update")
+    print("  2. Script fetches current labels from Gmail")
+    print("  3. Template file created with suggestions")
+    print("  4. Edit label_updates.txt with your preferences")
+    print("  5. Confirm changes to apply")
+    print("  6. Automatic backup created before applying")
     print("=" * 80)
 
-    input("\n👉 Press ENTER to start fetching labels from Gmail...")
+
+def read_labels_command():
+    """Read and display current labels from Gmail."""
+    print("=" * 80)
+    print("Gmail Labels - Current State")
+    print("=" * 80)
 
     # Initialize Gmail client
     config_dir = Path("data")
     try:
+        print("\n🔌 Connecting to Gmail...")
         gmail_client = GmailClient(
             credentials_file="credentials.json",
             token_file="token.json",
@@ -296,24 +325,111 @@ def main():
         return 1
 
     # Get current labels from server
-    print("\n📋 Fetching current labels from Gmail server...")
-    current_labels = get_current_labels(gmail_client)
+    print("📋 Fetching labels from Gmail server...")
+    try:
+        current_labels = get_current_labels(gmail_client)
+    except GmailClientError as e:
+        print(f"❌ Error: {e}")
+        return 1
 
     if not current_labels:
-        print("No user-created labels found.")
+        print("\n⚠️  No user-created labels found.")
+        return 0
+
+    print(f"\n✓ Found {len(current_labels)} label(s)\n")
+
+    # Display current labels with details
+    print("Current Labels (from Gmail server):")
+    print("-" * 80)
+    for idx, (label_name, details) in enumerate(sorted(current_labels.items()), 1):
+        color = get_color_name(details.get('color', {}))
+        label_id = details['id']
+        print(f"{idx:2d}. {label_name}")
+        print(f"    Color: {color}")
+        print(f"    ID: {label_id}")
+
+    print("-" * 80)
+    print(f"\nTotal: {len(current_labels)} label(s)")
+    return 0
+
+
+def update_labels_interactive():
+    """Interactive step-by-step label update workflow."""
+    print("=" * 80)
+    print("Gmail Label Update Tool - Interactive Mode")
+    print("=" * 80)
+
+    # Step 1: Explain workflow
+    print("\n📖 This tool will guide you through 5 steps:")
+    print("  Step 1: Fetch current labels from Gmail")
+    print("  Step 2: Generate template with color suggestions")
+    print("  Step 3: Edit template file with your preferences")
+    print("  Step 4: Review proposed changes")
+    print("  Step 5: Apply changes with automatic backup")
+    print("=" * 80)
+
+    response = input("\n👉 Ready to start? (yes/no): ").strip().lower()
+    if response != 'yes':
+        print("💡 Exited. Run again when ready.")
+        return 0
+
+    # STEP 1: Fetch labels
+    print("\n" + "=" * 80)
+    print("STEP 1: Fetching Current Labels from Gmail")
+    print("=" * 80)
+
+    response = input("\n👉 Press ENTER to fetch labels from Gmail (or 'skip' to exit): ").strip().lower()
+    if response == 'skip':
+        print("💡 Exited. Run again when ready.")
+        return 0
+
+    # Initialize Gmail client
+    config_dir = Path("data")
+    try:
+        print("\n🔌 Connecting to Gmail...")
+        gmail_client = GmailClient(
+            credentials_file="credentials.json",
+            token_file="token.json",
+            config_dir=config_dir
+        )
+    except GmailClientError as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+    # Get current labels from server
+    print("📋 Fetching labels from server...")
+    try:
+        current_labels = get_current_labels(gmail_client)
+    except GmailClientError as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+    if not current_labels:
+        print("\n⚠️  No user-created labels found.")
         return 0
 
     print(f"✓ Found {len(current_labels)} label(s)\n")
 
-    # Display current labels with actual colors from server
-    print("Current Labels (from Gmail server):")
+    # Display current labels
+    print("Current Labels:")
     print("-" * 80)
-    for label_name, details in sorted(current_labels.items()):
+    for idx, (label_name, details) in enumerate(sorted(current_labels.items()), 1):
         color = get_color_name(details.get('color', {}))
-        print(f"  {label_name} (current color: {color})")
+        print(f"{idx:2d}. {label_name} (color: {color})")
+    print("-" * 80)
 
-    # Show suggestions with auto-assigned colors
-    print("\n💡 Suggested Enhancements (each label gets a different color):")
+    # STEP 2: Generate template
+    print("\n" + "=" * 80)
+    print("STEP 2: Generate Template with Color Suggestions")
+    print("=" * 80)
+
+    response = input("\n👉 Press ENTER to generate template file (or 'skip' to exit): ").strip().lower()
+    if response == 'skip':
+        print("💡 Exited. Run again when ready.")
+        return 0
+
+    # Show suggestions
+    print("\n💡 Color Suggestions (each label gets a different color):")
     print("-" * 80)
     sorted_labels = sorted(current_labels.keys())
     for idx, label_name in enumerate(sorted_labels):
@@ -323,26 +439,33 @@ def main():
             print(f"  {label_name}")
             print(f"    → {suggestion['suggested_name']} (color: {auto_color})")
         else:
-            print(f"  {label_name} (suggested color: {auto_color})")
+            print(f"  {label_name} → {auto_color}")
 
     # Create template file
     template_file = Path("label_updates.txt")
     print(f"\n📝 Creating template file: {template_file}")
     create_template_file(current_labels, template_file)
-    print(f"✓ Template created with suggestions and auto-assigned colors")
+    print(f"✓ Template created with suggestions")
 
-    # Ask user to edit the file
+    # STEP 3: Edit template
     print("\n" + "=" * 80)
-    print("📝 Edit 'label_updates.txt' with your preferences:")
+    print("STEP 3: Edit Template File")
+    print("=" * 80)
+    print("\n📝 Instructions:")
+    print("  • Open 'label_updates.txt' in your text editor")
     print("  • Format: old_name | new_name | color")
-    print("  • Available colors: red, orange, yellow, green, teal, blue, purple, pink, brown, gray")
-    print("  • Keep 'new_name' same as 'old_name' if you only want to change color")
+    print("  • Available colors:", ", ".join(COLOR_ROTATION))
+    print("  • Keep 'new_name' same as 'old_name' to only change color")
     print("  • Leave 'color' empty to keep current color")
+    print("  • Save the file when done")
+
+    input("\n👉 Press ENTER after you've finished editing the file (or 'skip' to exit): ").strip().lower()
+
+    # STEP 4: Review changes
+    print("\n" + "=" * 80)
+    print("STEP 4: Review Proposed Changes")
     print("=" * 80)
 
-    input("\n👉 Press ENTER after you've finished editing the file...")
-
-    # Re-read the file and show what will be changed
     print("\n📖 Reading your changes from label_updates.txt...")
     updates, warnings = parse_update_file(template_file)
 
@@ -357,7 +480,7 @@ def main():
         print("💡 You can edit 'label_updates.txt' and run this script again anytime.")
         return 0
 
-    # Display the changes with better formatting
+    # Display the changes
     print("\n📋 Proposed Changes:")
     print("=" * 80)
 
@@ -385,10 +508,15 @@ def main():
         print("💡 You can edit 'label_updates.txt' and run this script again anytime.")
         return 0
 
-    # Ask for confirmation
+    print("=" * 80)
+    print(f"\nTotal: {len(valid_updates)} label(s) will be updated")
+
+    # STEP 5: Apply changes
     print("\n" + "=" * 80)
-    print(f"Ready to update {len(valid_updates)} label(s)")
-    response = input("\nType 'confirm' to apply these changes, or 'skip' to exit: ").strip().lower()
+    print("STEP 5: Apply Changes")
+    print("=" * 80)
+
+    response = input("\n👉 Type 'confirm' to apply changes, or 'skip' to exit: ").strip().lower()
 
     if response == 'confirm':
         # Create backup before making changes
@@ -409,6 +537,66 @@ def main():
         print("\n💡 No changes made. You can edit 'label_updates.txt' and run this script again anytime.")
 
     return 0
+
+
+def main():
+    """Main entry point with argument parsing."""
+    parser = argparse.ArgumentParser(
+        description="Gmail Label Update Tool - Manage label names and colors",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python update_labels.py --help          Show help information
+  python update_labels.py --read          Read current labels from Gmail
+  python update_labels.py --update        Update labels interactively (step-by-step)
+
+Available Colors:
+  blue, green, orange, purple, red, teal, pink, yellow, brown, gray
+
+File Format (label_updates.txt):
+  old_name | new_name | color
+
+Example:
+  Finance & Bills | 💰 Finance & Bills | green
+  Work Projects | 💼 Work Projects | blue
+        """
+    )
+
+    parser.add_argument(
+        '--read',
+        action='store_true',
+        help='Read and display current labels from Gmail server'
+    )
+
+    parser.add_argument(
+        '--update',
+        action='store_true',
+        help='Update labels step-by-step (interactive workflow)'
+    )
+
+    args = parser.parse_args()
+
+    # If no arguments provided, show help
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print("\n💡 Tip: Use --update to start the interactive label update workflow")
+        return 0
+
+    # Execute command based on arguments
+    try:
+        if args.read:
+            return read_labels_command()
+        elif args.update:
+            return update_labels_interactive()
+        else:
+            parser.print_help()
+            return 0
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Interrupted by user. Exiting safely...")
+        return 130
+    except Exception as e:
+        print(f"\n❌ Unexpected error: {e}")
+        return 1
 
 
 if __name__ == "__main__":

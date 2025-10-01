@@ -254,9 +254,10 @@ def read_filters_command():
         print(f"Total config rules: {analysis['total_config_rules']}")
 
         # Show breakdown by category
-        print("\n📁 Breakdown by Category:")
+        print("\n📁 Detailed Breakdown by Category:")
         for category_name in sorted(config.categories.keys()):
-            gmail_count = len(analysis['filters_by_category'].get(category_name, []))
+            gmail_filters_list = analysis['filters_by_category'].get(category_name, [])
+            gmail_count = len(gmail_filters_list)
             config_count = len(analysis['config_domains_by_category'].get(category_name, []))
 
             status = "✓" if gmail_count == config_count else "⚠️"
@@ -264,44 +265,72 @@ def read_filters_command():
             print(f"      Gmail filters: {gmail_count}")
             print(f"      Config rules: {config_count}")
 
+            # Show what current Gmail filters are doing
+            if gmail_filters_list:
+                print(f"\n      📧 Current Gmail Filters (what's active now):")
+                # Extract domains from Gmail filters
+                gmail_domains = set()
+                for filter_criteria in gmail_filters_list:
+                    from_field = filter_criteria.get('from', '')
+                    query_field = filter_criteria.get('query', '')
+
+                    if from_field:
+                        gmail_domains.add(from_field)
+                    elif query_field and 'from:' in query_field:
+                        # Extract domain from query
+                        import re
+                        match = re.search(r'from:([^\s]+)', query_field)
+                        if match:
+                            gmail_domains.add(match.group(1))
+
+                gmail_domains_sorted = sorted(gmail_domains)
+                for idx, domain in enumerate(gmail_domains_sorted[:5], 1):
+                    print(f"        {idx}. from:{domain} → apply label '{category_name}'")
+                if len(gmail_domains_sorted) > 5:
+                    print(f"        ... and {len(gmail_domains_sorted) - 5} more")
+
             # Get config details for this category
             category_config = config.categories.get(category_name)
             if category_config:
                 high_domains = category_config.domains.get('high_confidence', [])
                 medium_domains = category_config.domains.get('medium_confidence', [])
 
-                print(f"      Config breakdown:")
+                print(f"\n      📋 Config Rules (what should be active):")
                 print(f"        • High confidence: {len(high_domains)} domain(s)")
                 print(f"        • Medium confidence: {len(medium_domains)} domain(s)")
 
-                # Show sample domains from config
+                # Show sample domains from config with status
                 all_config_domains = analysis['config_domains_by_category'].get(category_name, [])
                 if all_config_domains:
-                    print(f"      Sample config domains:")
-                    for domain in all_config_domains[:3]:
-                        # Check if this domain exists in Gmail
-                        existing_domains = set()
-                        for filter_criteria in analysis['filters_by_category'].get(category_name, []):
-                            from_field = filter_criteria.get('from', '')
-                            if from_field:
-                                existing_domains.add(from_field)
+                    print(f"        Sample rules:")
 
+                    # Get existing Gmail domains for comparison
+                    existing_domains = set()
+                    for filter_criteria in gmail_filters_list:
+                        from_field = filter_criteria.get('from', '')
+                        if from_field:
+                            existing_domains.add(from_field)
+
+                    # Show first few with sync status
+                    for idx, domain in enumerate(all_config_domains[:5], 1):
                         status_icon = "✓" if domain in existing_domains else "✗"
-                        print(f"        {status_icon} {domain}")
-                    if len(all_config_domains) > 3:
-                        print(f"        ... and {len(all_config_domains) - 3} more")
+                        status_text = "synced" if domain in existing_domains else "MISSING"
+                        print(f"          {status_icon} from:{domain} → '{category_name}' ({status_text})")
 
-            # Show missing domains
+                    if len(all_config_domains) > 5:
+                        print(f"          ... and {len(all_config_domains) - 5} more")
+
+            # Show diff summary
             if category_name in analysis['missing_in_gmail']:
                 missing = analysis['missing_in_gmail'][category_name]
-                print(f"      ⚠️  Missing in Gmail: {len(missing)} domain(s)")
-                if len(missing) <= 5:
-                    for domain in missing:
-                        print(f"        ✗ {domain}")
-                else:
-                    for domain in missing[:5]:
-                        print(f"        ✗ {domain}")
-                    print(f"        ... and {len(missing) - 5} more")
+                print(f"\n      🔴 DIFFERENCE - Missing in Gmail: {len(missing)} rule(s)")
+                print(f"         These rules from config are NOT active in Gmail:")
+                for domain in missing[:5]:
+                    print(f"         ✗ from:{domain} → '{category_name}'")
+                if len(missing) > 5:
+                    print(f"         ... and {len(missing) - 5} more")
+            else:
+                print(f"\n      ✅ DIFFERENCE - All config rules are active in Gmail!")
 
         # Summary
         total_missing = sum(len(v) for v in analysis['missing_in_gmail'].values())

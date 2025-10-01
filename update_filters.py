@@ -412,19 +412,21 @@ def read_filters_command():
 
 
 def create_filters_from_config(gmail_client: GmailClient, config: Config,
+                                existing_filters: List[Dict] = None,
                                 contradictions: Dict = None,
-                                dry_run: bool = False) -> Tuple[int, int]:
+                                dry_run: bool = False) -> Tuple[int, int, int]:
     """
     Create filters from configuration file.
 
     Args:
         gmail_client: Gmail client instance
         config: Configuration object
+        existing_filters: List of existing filters from Gmail
         contradictions: Dict of contradicting domains with resolution strategy
         dry_run: If True, only preview changes
 
     Returns:
-        Tuple of (success_count, failure_count)
+        Tuple of (success_count, failure_count, already_exists_count)
     """
     print(f"\n{'🔍 DRY RUN MODE' if dry_run else '🚀 CREATING FILTERS'}")
     print("=" * 80)
@@ -432,10 +434,27 @@ def create_filters_from_config(gmail_client: GmailClient, config: Config,
     success_count = 0
     failure_count = 0
     skipped_count = 0
+    already_exists_count = 0
 
     # Get or create labels
     labels = gmail_client.get_labels()
+    label_id_to_name = {v: k for k, v in labels.items()}
     contradictions = contradictions or {}
+
+    # Build set of existing domain->category mappings to avoid duplicates
+    existing_domain_category = {}
+    if existing_filters:
+        for filter_obj in existing_filters:
+            criteria = filter_obj.get('criteria', {})
+            actions = filter_obj.get('action', {})
+            from_field = criteria.get('from', '')
+
+            if from_field:
+                label_ids = actions.get('addLabelIds', [])
+                if label_ids:
+                    for label_id in label_ids:
+                        category = label_id_to_name.get(label_id, 'Unknown')
+                        existing_domain_category[from_field] = category
 
     for category_name, category_config in config.categories.items():
         print(f"\n📁 Category: {category_name}")
@@ -456,17 +475,27 @@ def create_filters_from_config(gmail_client: GmailClient, config: Config,
 
         label_id = labels.get(category_name)
 
-        # Get domains and filter out skipped contradictions
+        # Get domains and filter out skipped contradictions and already existing
         domains = category_config.domains
         high_domains = domains.get('high_confidence', [])
         medium_domains = domains.get('medium_confidence', [])
         all_domains = high_domains + medium_domains
 
-        # Filter out domains based on contradiction resolution
+        # Filter out domains based on various conditions
         domains_to_create = []
         domains_to_skip = []
+        domains_already_exist = []
 
         for domain in all_domains:
+            # Check if domain already has this exact filter
+            if domain in existing_domain_category:
+                if existing_domain_category[domain] == category_name:
+                    # Already exists with same category - skip
+                    domains_already_exist.append(domain)
+                    already_exists_count += 1
+                    continue
+
+            # Check contradiction resolution
             if domain in contradictions:
                 if contradictions[domain]['action'] == 'override':
                     domains_to_create.append(domain)
@@ -484,43 +513,60 @@ def create_filters_from_config(gmail_client: GmailClient, config: Config,
             else:
                 domains_to_create.append(domain)
 
-        print(f"  Domains to process: {len(domains_to_create)}")
+        print(f"  Domains to create: {len(domains_to_create)}")
         if domains_to_skip:
             print(f"  Domains skipped (user choice): {len(domains_to_skip)}")
+        if domains_already_exist:
+            print(f"  Domains already have filter: {len(domains_already_exist)}")
 
         if dry_run:
             print(f"  Would create {len(domains_to_create)} domain-based filters")
         else:
             # Create filters for non-skipped domains
-            if domains_to_create:
+            category_success = 0
+            category_failures = 0
+
+            for domain in domains_to_create:
                 try:
-                    # We need to create filters manually for each domain since we filtered some out
-                    for domain in domains_to_create:
-                        filter_criteria = {'from': domain}
-                        filter_action = {'addLabelIds': [label_id]}
+                    filter_criteria = {'from': domain}
+                    filter_action = {'addLabelIds': [label_id]}
 
-                        gmail_client.service.users().settings().filters().create(
-                            userId='me',
-                            body={
-                                'criteria': filter_criteria,
-                                'action': filter_action
-                            }
-                        ).execute()
+                    gmail_client.service.users().settings().filters().create(
+                        userId='me',
+                        body={
+                            'criteria': filter_criteria,
+                            'action': filter_action
+                        }
+                    ).execute()
 
-                    success_count += len(domains_to_create)
-                    print(f"  ✓ Created {len(domains_to_create)} filters")
-                    time.sleep(0.2)  # Rate limiting
+                    category_success += 1
+                    time.sleep(0.1)  # Rate limiting
+
                 except Exception as e:
-                    print(f"  ✗ Failed to create filters: {e}")
-                    failure_count += 1
+                    # Check if it's a "filter already exists" error
+                    if 'Filter already exists' in str(e):
+                        already_exists_count += 1
+                    else:
+                        category_failures += 1
+                        print(f"  ✗ Failed to create filter for {domain}: {e}")
+
+            success_count += category_success
+            failure_count += category_failures
+
+            if category_success > 0:
+                print(f"  ✓ Created {category_success} filters")
+            if category_failures > 0:
+                print(f"  ✗ Failed to create {category_failures} filters")
 
     print(f"\n{'Would create' if dry_run else 'Created'} {success_count} filter(s)")
+    if already_exists_count > 0:
+        print(f"Already exist: {already_exists_count} filter(s) (skipped)")
     if skipped_count > 0:
-        print(f"Skipped: {skipped_count} filter(s) (due to contradictions)")
+        print(f"Skipped: {skipped_count} filter(s) (due to user choice on contradictions)")
     if failure_count > 0:
         print(f"Failed: {failure_count} operation(s)")
 
-    return success_count, failure_count
+    return success_count, failure_count, already_exists_count
 
 
 def update_filters_interactive():
@@ -756,25 +802,34 @@ def update_filters_interactive():
         print(f"✓ Backup saved to: {backup_file}")
 
         # Create filters with contradiction resolutions
-        success, failure = create_filters_from_config(
+        success, failure, already_exists = create_filters_from_config(
             gmail_client, config,
+            existing_filters=current_filters,
             contradictions=contradiction_resolutions,
             dry_run=False
         )
 
+        print(f"\n{'=' * 80}")
         if failure == 0:
-            print("\n✅ All filters created successfully!")
-            print(f"💾 Backup available at: {backup_file}")
-            if contradiction_resolutions:
-                override_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'override')
-                skip_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'skip')
-                if override_count > 0:
-                    print(f"🔄 Overridden {override_count} conflicting filter(s)")
-                if skip_count > 0:
-                    print(f"⏭️  Skipped {skip_count} conflicting filter(s)")
+            print("✅ Filter sync completed successfully!")
         else:
-            print(f"\n⚠️  Completed with {failure} failure(s)")
-            print(f"💾 You can review backup: {backup_file}")
+            print(f"⚠️  Completed with {failure} failure(s)")
+
+        print(f"\n📊 Results:")
+        print(f"  ✓ Created: {success} new filter(s)")
+        if already_exists > 0:
+            print(f"  ⏭️  Already exist: {already_exists} filter(s)")
+        if contradiction_resolutions:
+            override_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'override')
+            skip_count = sum(1 for r in contradiction_resolutions.values() if r['action'] == 'skip')
+            if override_count > 0:
+                print(f"  🔄 Overridden: {override_count} conflicting filter(s)")
+            if skip_count > 0:
+                print(f"  ⏭️  Skipped: {skip_count} conflicting filter(s)")
+        if failure > 0:
+            print(f"  ✗ Failed: {failure} filter(s)")
+
+        print(f"\n💾 Backup saved to: {backup_file}")
     else:
         print("\n💡 No changes made. Your existing filters remain unchanged.")
 

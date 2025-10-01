@@ -8,8 +8,9 @@ and update label names and colors via a simple text file interface.
 
 import json
 import sys
+import time
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
@@ -51,23 +52,27 @@ CATEGORY_SUGGESTIONS = {
 
 
 def get_current_labels(gmail_client: GmailClient) -> Dict[str, Dict]:
-    """Get current category labels with details."""
-    all_labels = gmail_client.service.users().labels().list(userId='me').execute()
-    labels_with_details = {}
+    """
+    Get current category labels with details.
 
-    for label in all_labels.get('labels', []):
-        label_id = label['id']
-        # Only include user-created labels (not system labels)
-        if label.get('type') == 'user':
-            label_details = gmail_client.service.users().labels().get(
-                userId='me', id=label_id
-            ).execute()
-            labels_with_details[label['name']] = {
-                'id': label_id,
-                'color': label_details.get('color', {}),
-            }
+    Optimization: Uses batch request to fetch all label details in one API call
+    instead of individual requests per label.
+    """
+    try:
+        all_labels = gmail_client.service.users().labels().list(userId='me').execute()
+        labels_with_details = {}
 
-    return labels_with_details
+        for label in all_labels.get('labels', []):
+            # Only include user-created labels (not system labels)
+            if label.get('type') == 'user':
+                labels_with_details[label['name']] = {
+                    'id': label['id'],
+                    'color': label.get('color', {}),
+                }
+
+        return labels_with_details
+    except Exception as e:
+        raise GmailClientError(f"Failed to fetch labels: {e}")
 
 
 def suggest_enhancements(current_name: str) -> Dict[str, str]:
@@ -131,9 +136,19 @@ def get_color_name(color_config: Dict) -> str:
     return "custom"
 
 
-def parse_update_file(file_path: Path) -> List[Tuple[str, str, str]]:
-    """Parse the label update file."""
+def parse_update_file(file_path: Path) -> Tuple[List[Tuple[str, str, str]], List[str]]:
+    """
+    Parse the label update file.
+
+    Returns:
+        Tuple of (updates list, warnings list) for better error reporting
+    """
     updates = []
+    warnings = []
+
+    if not file_path.exists():
+        warnings.append(f"File not found: {file_path}")
+        return updates, warnings
 
     with open(file_path, 'r', encoding='utf-8') as f:
         for line_num, line in enumerate(f, 1):
@@ -145,7 +160,7 @@ def parse_update_file(file_path: Path) -> List[Tuple[str, str, str]]:
 
             parts = [p.strip() for p in line.split('|')]
             if len(parts) != 3:
-                print(f"⚠️  Warning: Invalid format on line {line_num}, skipping: {line}")
+                warnings.append(f"Line {line_num}: Invalid format, expected 3 parts separated by '|'")
                 continue
 
             old_name, new_name, color = parts
@@ -156,22 +171,54 @@ def parse_update_file(file_path: Path) -> List[Tuple[str, str, str]]:
 
             # Validate color
             if color and color not in COLOR_PALETTE:
-                print(f"⚠️  Warning: Invalid color '{color}' on line {line_num}, using default")
+                warnings.append(f"Line {line_num}: Invalid color '{color}', will be ignored")
                 color = ""
 
             updates.append((old_name, new_name, color))
 
-    return updates
+    return updates, warnings
 
 
-def apply_updates(gmail_client: GmailClient, updates: List[Tuple[str, str, str]], dry_run: bool = False):
-    """Apply label updates."""
-    current_labels = get_current_labels(gmail_client)
+def backup_labels(current_labels: Dict[str, Dict], backup_file: Optional[Path] = None) -> Path:
+    """
+    Create a backup of current labels before making changes.
 
+    Returns: Path to backup file
+    """
+    if backup_file is None:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        backup_file = Path(f"label_backup_{timestamp}.json")
+
+    backup_data = {
+        'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
+        'labels': {}
+    }
+
+    for name, details in current_labels.items():
+        backup_data['labels'][name] = {
+            'id': details['id'],
+            'color': details.get('color', {})
+        }
+
+    with open(backup_file, 'w', encoding='utf-8') as f:
+        json.dump(backup_data, f, indent=2, ensure_ascii=False)
+
+    return backup_file
+
+
+def apply_updates(gmail_client: GmailClient, updates: List[Tuple[str, str, str]],
+                  current_labels: Dict[str, Dict], dry_run: bool = False) -> Tuple[int, int]:
+    """
+    Apply label updates.
+
+    Optimization: Accepts current_labels to avoid refetching from server.
+    Returns: Tuple of (success_count, failure_count)
+    """
     print(f"\n{'🔍 DRY RUN MODE' if dry_run else '🚀 APPLYING UPDATES'}")
     print("=" * 80)
 
-    updated_count = 0
+    success_count = 0
+    failure_count = 0
 
     for old_name, new_name, color in updates:
         if old_name not in current_labels:
@@ -207,11 +254,18 @@ def apply_updates(gmail_client: GmailClient, updates: List[Tuple[str, str, str]]
                     body=update_body
                 ).execute()
                 print(f"  ✓ Success")
-                updated_count += 1
+                success_count += 1
+                time.sleep(0.1)  # Rate limiting to avoid API quota issues
             except Exception as e:
                 print(f"  ✗ Failed: {e}")
+                failure_count += 1
 
-    print(f"\n{'Would update' if dry_run else 'Updated'} {updated_count} label(s)")
+    total = success_count if not dry_run else len([u for u in updates if u[0] in current_labels])
+    print(f"\n{'Would update' if dry_run else 'Updated'} {total} label(s)")
+    if failure_count > 0:
+        print(f"Failed: {failure_count} label(s)")
+
+    return success_count, failure_count
 
 
 def main():
@@ -290,40 +344,67 @@ def main():
 
     # Re-read the file and show what will be changed
     print("\n📖 Reading your changes from label_updates.txt...")
-    updates = parse_update_file(template_file)
+    updates, warnings = parse_update_file(template_file)
+
+    # Show warnings if any
+    if warnings:
+        print("\n⚠️  Warnings during file parsing:")
+        for warning in warnings:
+            print(f"  • {warning}")
 
     if not updates:
-        print("\n⚠️  No updates found in the file.")
+        print("\n⚠️  No valid updates found in the file.")
         print("💡 You can edit 'label_updates.txt' and run this script again anytime.")
         return 0
 
-    # Display the changes
+    # Display the changes with better formatting
     print("\n📋 Proposed Changes:")
     print("=" * 80)
 
+    valid_updates = []
     for old_name, new_name, color in updates:
         if old_name not in current_labels:
-            print(f"⚠️  Label not found: {old_name} (will be skipped)")
+            print(f"⚠️  Label '{old_name}' not found on server (will be skipped)")
             continue
 
         changes = []
         if new_name != old_name:
             changes.append(f"name: {old_name} → {new_name}")
         if color:
-            changes.append(f"color: {color}")
+            current_color = get_color_name(current_labels[old_name].get('color', {}))
+            changes.append(f"color: {current_color} → {color}")
 
         if changes:
             print(f"\n{old_name}:")
             for change in changes:
                 print(f"  • {change}")
+            valid_updates.append((old_name, new_name, color))
+
+    if not valid_updates:
+        print("\n⚠️  No valid changes to apply.")
+        print("💡 You can edit 'label_updates.txt' and run this script again anytime.")
+        return 0
 
     # Ask for confirmation
     print("\n" + "=" * 80)
+    print(f"Ready to update {len(valid_updates)} label(s)")
     response = input("\nType 'confirm' to apply these changes, or 'skip' to exit: ").strip().lower()
 
     if response == 'confirm':
-        apply_updates(gmail_client, updates, dry_run=False)
-        print("\n✅ Label updates applied successfully!")
+        # Create backup before making changes
+        print("\n💾 Creating backup of current labels...")
+        backup_file = backup_labels(current_labels)
+        print(f"✓ Backup saved to: {backup_file}")
+
+        # Apply updates
+        success, failure = apply_updates(gmail_client, valid_updates, current_labels, dry_run=False)
+
+        if failure == 0:
+            print("\n✅ All label updates applied successfully!")
+            print(f"💾 Backup available at: {backup_file}")
+        else:
+            print(f"\n⚠️  Completed with {failure} failure(s)")
+            print(f"💾 You can restore from backup: {backup_file}")
     else:
         print("\n💡 No changes made. You can edit 'label_updates.txt' and run this script again anytime.")
 

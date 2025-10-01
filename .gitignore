@@ -111,6 +111,7 @@ archive/
 # Reset and operational backups
 reset_backup_*.json
 *_backup_*.json
+label_backup_*.json
 
 # Performance and analysis reports
 performance_analysis.json

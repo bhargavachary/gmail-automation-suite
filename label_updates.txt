@@ -17,7 +17,7 @@ Notes | 📁 Notes | blue
 
 # Current: 🏦 Finance & Bills
 # Suggested: 💰 Finance & Bills (color: orange)
-🏦 Finance & Bills | 💰 Finance & Bills | orange
+🏦 Finance & Bills | 💰 Finance & Bills | red
 
 # Current: 👤 Personal & Social
 # Suggested: 👤 Personal & Social (color: purple)
@@ -25,11 +25,11 @@ Notes | 📁 Notes | blue
 
 # Current: 📰 Promotions & Marketing
 # Suggested: 📰 Promotions & Marketing (color: red)
-📰 Promotions & Marketing | 📰 Promotions & Marketing | red
+📰 Promotions & Marketing | 📰 Promotions & Marketing | orange
 
 # Current: 🔔 Security & Alerts
 # Suggested: 🔔 Security & Alerts (color: teal)
-🔔 Security & Alerts | 🔔 Security & Alerts | teal
+🔔 Security & Alerts | 🔔 Security & Alerts | yellow
 
 # Current: 🛒 Purchases & Receipts
 # Suggested: 🛒 Purchases & Receipts (color: pink)

@@ -32,6 +32,9 @@ COLOR_PALETTE = {
     "gray": {"textColor": "#ffffff", "backgroundColor": "#9e9e9e"},
 }
 
+# Color rotation order for automatic assignment
+COLOR_ROTATION = ["blue", "green", "orange", "purple", "red", "teal", "pink", "yellow", "brown", "gray"]
+
 # Suggested category enhancements
 CATEGORY_SUGGESTIONS = {
     "Finance & Bills": {"emoji": "💰", "color": "green"},
@@ -103,13 +106,17 @@ def create_template_file(current_labels: Dict[str, Dict], output_file: Path):
 
         f.write("=" * 80 + "\n\n")
 
-        for label_name, details in sorted(current_labels.items()):
+        sorted_labels = sorted(current_labels.items())
+        for idx, (label_name, details) in enumerate(sorted_labels):
             suggestion = suggest_enhancements(label_name)
             current_color = get_color_name(details.get('color', {}))
 
+            # Assign different color from rotation for each label
+            suggested_color = COLOR_ROTATION[idx % len(COLOR_ROTATION)]
+
             f.write(f"# Current: {label_name}\n")
-            f.write(f"# Suggested: {suggestion['suggested_name']} (color: {suggestion['suggested_color']})\n")
-            f.write(f"{label_name} | {suggestion['suggested_name']} | {suggestion['suggested_color']}\n\n")
+            f.write(f"# Suggested: {suggestion['suggested_name']} (color: {suggested_color})\n")
+            f.write(f"{label_name} | {suggestion['suggested_name']} | {suggested_color}\n\n")
 
 
 def get_color_name(color_config: Dict) -> str:
@@ -242,14 +249,18 @@ def main():
         color = get_color_name(details.get('color', {}))
         print(f"  {label_name} (color: {color})")
 
-    # Show suggestions
-    print("\n💡 Suggested Enhancements:")
+    # Show suggestions with auto-assigned colors
+    print("\n💡 Suggested Enhancements (each label gets a different color):")
     print("-" * 80)
-    for label_name in sorted(current_labels.keys()):
+    sorted_labels = sorted(current_labels.keys())
+    for idx, label_name in enumerate(sorted_labels):
         suggestion = suggest_enhancements(label_name)
+        auto_color = COLOR_ROTATION[idx % len(COLOR_ROTATION)]
         if suggestion['suggested_name'] != label_name:
             print(f"  {label_name}")
-            print(f"    → {suggestion['suggested_name']} (color: {suggestion['suggested_color']})")
+            print(f"    → {suggestion['suggested_name']} (color: {auto_color})")
+        else:
+            print(f"  {label_name} (color: {auto_color})")
 
     # Create template file
     template_file = Path("label_updates.txt")

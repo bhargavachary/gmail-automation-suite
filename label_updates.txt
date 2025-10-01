@@ -7,28 +7,31 @@
 
 ================================================================================
 
-# Example 1: Update both name and color
-# Current: Finance & Bills
-# Suggested: 💰 Finance & Bills (color: green)
-Finance & Bills | 💰 Finance & Bills | green
+# Current: Notes
+# Suggested: 📁 Notes (color: blue)
+Notes | 📁 Notes | blue
 
-# Example 2: Keep name, only change color
-# Current: Work Projects
-# Suggested: 💼 Work & Professional (color: blue)
-Work Projects | Work Projects | blue
+# Current: ✈️ Services & Subscriptions
+# Suggested: ✈️ Services & Subscriptions (color: green)
+✈️ Services & Subscriptions | ✈️ Services & Subscriptions | green
 
-# Example 3: Only change name, keep current color
-# Current: Shopping
-# Suggested: 🛒 Shopping & E-commerce (color: orange)
-Shopping | 🛒 Shopping & E-commerce |
+# Current: 🏦 Finance & Bills
+# Suggested: 💰 Finance & Bills (color: orange)
+🏦 Finance & Bills | 💰 Finance & Bills | orange
 
-# Example 4: Keep everything as-is (will be skipped)
-# Current: Personal
-# Suggested: 📁 Personal (color: blue)
-Personal | Personal |
+# Current: 👤 Personal & Social
+# Suggested: 👤 Personal & Social (color: purple)
+👤 Personal & Social | 👤 Personal & Social | purple
 
-================================================================================
+# Current: 📰 Promotions & Marketing
+# Suggested: 📰 Promotions & Marketing (color: red)
+📰 Promotions & Marketing | 📰 Promotions & Marketing | red
 
-# Add your label updates below this line
-# Format: old_name | new_name | color
+# Current: 🔔 Security & Alerts
+# Suggested: 🔔 Security & Alerts (color: teal)
+🔔 Security & Alerts | 🔔 Security & Alerts | teal
+
+# Current: 🛒 Purchases & Receipts
+# Suggested: 🛒 Purchases & Receipts (color: pink)
+🛒 Purchases & Receipts | 🛒 Purchases & Receipts | pink
 

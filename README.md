@@ -306,6 +306,91 @@ gmail-automation filters --create-all
 gmail-automation config --validate
 ```
 
+## 🛠️ Ad-Hoc Management Scripts
+
+In addition to the main CLI, the suite includes standalone scripts for interactive label and filter management:
+
+### Update Labels (`update_labels.py`)
+
+Interactive script for reviewing and updating Gmail labels with colors and emojis.
+
+```bash
+# View current labels
+python update_labels.py --read
+
+# Interactive label update workflow
+python update_labels.py --update
+```
+
+**Features:**
+- Lists all current user-created labels with colors
+- Suggests enhancements (emojis, better names, colors)
+- Step-by-step interactive updates with preview
+- Uses Gmail API approved color palette
+- Batch updates with rate limiting
+
+**Color Options:** red, orange, yellow, green, teal, blue, purple, pink, brown, gray
+
+**Example Workflow:**
+```bash
+# Step 1: Review current labels
+python update_labels.py --read
+
+# Step 2: Update labels interactively
+python update_labels.py --update
+# Follow prompts to:
+# - Review each label's current state
+# - Accept suggested enhancements or customize
+# - Preview changes before applying
+# - Apply updates with automatic rate limiting
+```
+
+### Update Filters (`update_filters.py`)
+
+Interactive script for syncing Gmail filters with rule-based configuration.
+
+```bash
+# View current filters
+python update_filters.py --read
+
+# Interactive filter update workflow
+python update_filters.py --update
+```
+
+**Features:**
+- Exports all current Gmail filters to readable text file
+- Compares existing filters with rule-based config
+- Detects contradictions and suggests resolutions
+- Shows detailed diff between current and new rules
+- Interactive approval for each filter creation
+- Prevents duplicate filters automatically
+
+**Example Workflow:**
+```bash
+# Step 1: Export and review current filters
+python update_filters.py --read
+# Creates: data/gmail_filters_export.txt
+
+# Step 2: Update filters from config
+python update_filters.py --update
+# Shows detailed comparison and prompts for:
+# - Contradiction resolution (if any)
+# - Rule breakdown by category
+# - Current vs new rules diff
+# - Filter-by-filter approval
+```
+
+**Configuration Files:**
+- `data/email_categories.json` - Base classification rules
+- `data/custom_email_rules.json` - User customizations
+
+These scripts are useful for:
+- One-time bulk label reorganization
+- Fine-tuning filter rules before automation
+- Auditing existing Gmail setup
+- Migrating to new label schemes
+- Testing configuration changes safely
+
 ## 🔧 Troubleshooting
 
 ### Authentication Issues
